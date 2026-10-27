@@ -11,7 +11,7 @@ import type { AccountStatementQueryDto, TrialBalanceQueryDto } from '../dto/repo
 import { fiscalYearContaining } from '../fiscal/fiscal-calendar.js';
 import { AccountsRepository } from '../repositories/accounts.repository.js';
 import { FiscalRepository } from '../repositories/fiscal.repository.js';
-import { LedgerRepository } from '../repositories/ledger.repository.js';
+import { LedgerRepository, type SourceFilter } from '../repositories/ledger.repository.js';
 
 interface Amounts {
   debit: string;
@@ -44,15 +44,22 @@ export class LedgerReportsService {
   ) {}
 
   /**
-   * Trial balance for [from, to]. Income-statement accounts start each fiscal
-   * year at zero; earlier years' profit is carried in retained earnings, so
-   * the report is correct without year-end closing entries.
+   * Trial balance for [from, to] inside one fiscal year.
+   *  - Income-statement accounts start the year at zero. Closed years were
+   *    moved to retained earnings by their closing entry; the result of any
+   *    earlier year that was never closed is added to retained earnings'
+   *    opening balance here, so the report balances either way.
+   *  - Opening balances (cut-over) always show in the Opening column.
+   *  - By default the year-end closing entry is left out ("before closing");
+   *    `includeClosing` gives the post-closing trial balance.
    */
   async trialBalance(query: TrialBalanceQueryDto) {
-    const { from, to, fiscalYearStart, currency } = await this.resolveRange(query.from, query.to);
+    const { from, to, fiscalYearStart, toYearStart, currency } = await this.resolveRange(query.from, query.to);
+    if (fiscalYearStart.getTime() !== toYearStart.getTime()) throw this.crossYear();
+    const includeClosing = query.includeClosing ?? false;
     const [accounts, sums] = await Promise.all([
       this.accounts.list({ includeInactive: true }),
-      this.ledger.accountTotals({ fiscalYearStart, from, to, branchId: query.branchId, costCenterId: query.costCenterId }),
+      this.ledger.accountTotals({ fiscalYearStart, from, to, includeClosing, branchId: query.branchId, costCenterId: query.costCenterId }),
     ]);
     const totalsById = new Map(sums.map((t) => [t.accountId, t]));
     const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -120,6 +127,9 @@ export class LedgerReportsService {
       from: formatDateOnly(from),
       to: formatDateOnly(to),
       currency,
+      includeClosing,
+      /** Result of earlier years never closed, included in retained earnings' opening. */
+      unclosedPriorResult: formatAmount(priorYearsProfit.negated(), currency),
       rows,
       totals,
       balanced: totals.closing.debit === totals.closing.credit && totals.movement.debit === totals.movement.credit,
@@ -133,21 +143,33 @@ export class LedgerReportsService {
     if (account.isGroup) {
       throw new AppException(ErrorCode.ACCOUNT_NOT_POSTABLE, 'Statements are available for postable accounts');
     }
-    const { from, to, fiscalYearStart, currency } = await this.resolveRange(query.from, query.to);
+    const { from, to, fiscalYearStart, toYearStart, currency } = await this.resolveRange(query.from, query.to);
+    const profitAndLoss = isProfitAndLoss(account.type);
+    // Income-statement balances restart every year: a range across years has no single opening.
+    if (profitAndLoss && fiscalYearStart.getTime() !== toYearStart.getTime()) throw this.crossYear();
     const dims = { branchId: query.branchId, costCenterId: query.costCenterId };
-    const openingFrom = isProfitAndLoss(account.type) ? fiscalYearStart : undefined;
+    const openingFrom = profitAndLoss ? fiscalYearStart : undefined;
     const dayAfterTo = new Date(to.getTime() + 86_400_000);
+    // Opening balances are reported as opening; closing entries can be hidden.
+    const activity: SourceFilter = {
+      excludeSources: query.includeClosing === false ? ['OPENING_BALANCE', 'CLOSING'] : ['OPENING_BALANCE'],
+    };
+    const isRetainedEarnings = account.systemKey === SystemAccount.RETAINED_EARNINGS;
 
     const cursor = query.cursor ? decodeCursor<{ d: string; i: string }>(query.cursor) : null;
     if (query.cursor && !cursor) throw new AppException(ErrorCode.BAD_REQUEST, 'Invalid cursor');
     const after = cursor ? { date: parseDateOnly(cursor.d), id: cursor.i } : undefined;
 
-    const [opening, periodNet, beforePage, rows] = await Promise.all([
+    const [openingBefore, openingInRange, unclosed, periodNet, beforePage, rows] = await Promise.all([
       this.ledger.netBalance(accountId, { from: openingFrom, before: from, ...dims }),
-      this.ledger.netBalance(accountId, { from, before: dayAfterTo, ...dims }),
-      after ? this.ledger.netBeforeCursor(accountId, { from, to, ...dims }, after) : Promise.resolve(ZERO),
-      this.ledger.listForAccount(accountId, { from, to, ...dims }, { after, limit: query.limit }),
+      this.ledger.netBalance(accountId, { from, before: dayAfterTo, onlySources: ['OPENING_BALANCE'], ...dims }),
+      // Retained earnings carries the result of earlier years never closed (as the trial balance does).
+      isRetainedEarnings ? this.ledger.unclosedResultBefore(fiscalYearStart, dims) : Promise.resolve(ZERO),
+      this.ledger.netBalance(accountId, { from, before: dayAfterTo, ...activity, ...dims }),
+      after ? this.ledger.netBeforeCursor(accountId, { from, to, ...activity, ...dims }, after) : Promise.resolve(ZERO),
+      this.ledger.listForAccount(accountId, { from, to, ...activity, ...dims }, { after, limit: query.limit }),
     ]);
+    const opening = openingBefore.plus(openingInRange).plus(unclosed);
 
     const page = buildCursorPage(rows, query.limit, (r) => ({ d: formatDateOnly(r.date), i: r.id }));
     let running = opening.plus(beforePage);
@@ -178,6 +200,8 @@ export class LedgerReportsService {
       currency,
       /** Signed: positive = debit balance, negative = credit balance. */
       openingBalance: formatAmount(opening, currency),
+      /** Part of the opening balance that is earlier years' unclosed result (retained earnings only). */
+      unclosedPriorResult: isRetainedEarnings ? formatAmount(unclosed, currency) : null,
       closingBalance: formatAmount(opening.plus(periodNet), currency),
       items,
       nextCursor: page.nextCursor,
@@ -198,6 +222,13 @@ export class LedgerReportsService {
         { field: 'from', errors: ['from must be on or before to'] },
       ]);
     }
-    return { from, to, fiscalYearStart: await yearOf(from), currency: profile.baseCurrency };
+    const [fiscalYearStart, toYearStart] = await Promise.all([yearOf(from), yearOf(to)]);
+    return { from, to, fiscalYearStart, toYearStart, currency: profile.baseCurrency };
+  }
+
+  private crossYear(): AppException {
+    return new AppException(ErrorCode.VALIDATION_FAILED, 'Request validation failed', [
+      { field: 'from', errors: ['from and to must be in the same fiscal year'] },
+    ]);
   }
 }

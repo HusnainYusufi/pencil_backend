@@ -19,6 +19,11 @@ export const Permission = {
   JOURNALS_POST: 'journals.post',
   /** Close / reopen fiscal periods and create fiscal years. */
   PERIODS_MANAGE: 'periods.manage',
+  /**
+   * Year-end close / reopen, lock dates and the opening balance date.
+   * Kept away from day-to-day bookkeepers (segregation of duties).
+   */
+  BOOKS_CLOSE: 'books.close',
   CONTACTS_READ: 'contacts.read',
   CONTACTS_MANAGE: 'contacts.manage',
   INVOICES_READ: 'invoices.read',

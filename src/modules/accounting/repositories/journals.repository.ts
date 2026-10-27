@@ -54,6 +54,41 @@ const lineRows = (tenantId: string, lines: NormalizedJournalLine[]) =>
 
 @Injectable()
 export class JournalsRepository extends TenantScopedRepository {
+  /**
+   * Row-locks the entry for the rest of the transaction, so a concurrent
+   * draft edit cannot slip in between reading the lines and posting them.
+   */
+  async lockForPosting(id: string): Promise<void> {
+    const tenantId = this.tenantId;
+    await this.inScope(
+      (client) => client.$queryRaw`SELECT id FROM journal_entries WHERE id = ${id}::uuid AND tenant_id = ${tenantId}::uuid FOR UPDATE`,
+    );
+  }
+
+  countDrafts(range: { from?: Date; to?: Date } = {}): Promise<number> {
+    return this.client.journalEntry.count({
+      where: {
+        tenantId: this.tenantId,
+        status: 'DRAFT',
+        ...((range.from || range.to) && { date: { ...(range.from && { gte: range.from }), ...(range.to && { lte: range.to }) } }),
+      },
+    });
+  }
+
+  /** Posted opening-balance entries that have not been reversed. */
+  countActiveOpeningBalances(): Promise<number> {
+    return this.client.journalEntry.count({
+      where: { tenantId: this.tenantId, status: 'POSTED', source: 'OPENING_BALANCE', reversedBy: null },
+    });
+  }
+
+  /** Posted entries (other than opening balances) dated before `date`. */
+  countPostedBefore(date: Date): Promise<number> {
+    return this.client.journalEntry.count({
+      where: { tenantId: this.tenantId, status: 'POSTED', date: { lt: date }, source: { not: 'OPENING_BALANCE' } },
+    });
+  }
+
   findDetail(id: string): Promise<JournalEntryDetail | null> {
     return this.client.journalEntry.findFirst({ where: { id, tenantId: this.tenantId }, include: ENTRY_DETAIL });
   }
