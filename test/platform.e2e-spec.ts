@@ -135,6 +135,20 @@ describe('Platform admin API (e2e)', () => {
     });
   });
 
+  describe('overview stats', () => {
+    it('aggregates tenants, subscriptions, plans and daily signups', async () => {
+      await signup(api);
+      const res = await api.get('/platform/stats', { token: admin });
+      expect(res.status).toBe(200);
+      expect(res.body.tenants.total).toBeGreaterThan(0);
+      expect(res.body.tenants.byStatus.reduce((n: number, r: { count: number }) => n + r.count, 0)).toBe(res.body.tenants.total);
+      expect(res.body.signups.perDay).toHaveLength(30);
+      expect(res.body.signups.perDay.at(-1).count).toBeGreaterThan(0);
+      expect(res.body.plans.map((p: { code: string }) => p.code)).toEqual(expect.arrayContaining(['starter', 'professional', 'business']));
+      expect(res.body.recent.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('catalog', () => {
     it('lists tenants with search and pagination', async () => {
       await signup(api, { legalName: 'Searchable Widgets Est' });
