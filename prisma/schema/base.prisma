@@ -1,0 +1,31 @@
+// Pencil data model. One file per bounded context; this file holds the
+// generator/datasource. Conventions:
+//   - PascalCase models / camelCase fields, mapped to snake_case in Postgres.
+//   - UUIDv7 primary keys (time-ordered -> index-friendly, not enumerable).
+//   - Every tenant-owned business table carries `tenant_id` and is protected
+//     by a row-level-security policy (see prisma/migrations/*_security_rls).
+//     Register such models in src/core/database/tenant-scoped-models.ts.
+//   - Timestamps are timestamptz(3); money is Decimal, never Float.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CountryCode {
+  SA
+  JO
+}
+
+enum ActorType {
+  USER
+  PLATFORM_ADMIN
+  SYSTEM
+}

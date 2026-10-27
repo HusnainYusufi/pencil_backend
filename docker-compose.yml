@@ -1,0 +1,73 @@
+# Local development stack.
+#
+#   docker compose up -d postgres            # database only (run the API with npm run start:dev)
+#   docker compose --profile app up -d --build  # database + migrations/seed + API in containers
+#
+# The init script creates the restricted `pencil_app` role used by the API and
+# the `pencil_owner` role used by migrations (see scripts/db/init-roles.sql).
+name: pencil
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c log_min_duration_statement=500
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/db/init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d pencil']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    profiles: [app]
+    build:
+      context: .
+      target: build
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts"
+    environment:
+      DATABASE_MIGRATION_URL: postgresql://pencil_owner:pencil_owner_dev@postgres:5432/pencil
+      DATABASE_URL: postgresql://pencil_app:pencil_app_dev@postgres:5432/pencil
+      SEED_PLATFORM_ADMIN_EMAIL: ${SEED_PLATFORM_ADMIN_EMAIL:-admin@pencil.local}
+      SEED_PLATFORM_ADMIN_PASSWORD: ${SEED_PLATFORM_ADMIN_PASSWORD:-ChangeMe!12345}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: [app]
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    environment:
+      # Local stack: dev secrets + plain HTTP, so not "production" (the API
+      # refuses placeholder secrets / insecure cookies in production).
+      NODE_ENV: development
+      LOG_FORMAT: json
+      HOST: 0.0.0.0
+      PORT: 4100
+      DATABASE_URL: postgresql://pencil_app:pencil_app_dev@postgres:5432/pencil
+      COOKIE_SECURE: 'false'
+      SWAGGER_ENABLED: 'true'
+    ports:
+      - '4100:4100'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:

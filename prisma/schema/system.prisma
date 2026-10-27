@@ -1,0 +1,52 @@
+// Cross-cutting system tables.
+
+/// Append-only (UPDATE/DELETE blocked by trigger). Tenant rows are RLS-scoped;
+/// platform-level events have tenant_id NULL and are visible only through the
+/// system (RLS-bypass) context used by platform staff endpoints.
+model AuditLog {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String?   @map("tenant_id") @db.Uuid
+  actorType  ActorType @map("actor_type")
+  actorId    String?   @map("actor_id") @db.Uuid
+  /// Dotted verb, e.g. `auth.login`, `tenant.suspended`, `role.updated`.
+  action     String    @db.VarChar(100)
+  entityType String?   @map("entity_type") @db.VarChar(64)
+  entityId   String?   @map("entity_id") @db.VarChar(64)
+  metadata   Json?
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent") @db.VarChar(512)
+  requestId  String?   @map("request_id") @db.VarChar(128)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// Replay protection for unsafe requests carrying an `Idempotency-Key`
+/// header (critical for invoices/payments: a retried POST must never post
+/// twice). Scope = the calling actor (tenant + user, or platform admin).
+model IdempotencyKey {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  scope          String            @db.VarChar(200)
+  key            String            @db.VarChar(255)
+  method         String            @db.VarChar(10)
+  path           String            @db.VarChar(500)
+  requestHash    String            @map("request_hash") @db.Char(64)
+  status         IdempotencyStatus
+  responseStatus Int?              @map("response_status")
+  responseBody   Json?             @map("response_body")
+  lockedUntil    DateTime?         @map("locked_until") @db.Timestamptz(3)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime          @map("expires_at") @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

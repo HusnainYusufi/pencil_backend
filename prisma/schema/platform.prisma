@@ -1,0 +1,173 @@
+// Platform (SaaS operator) side: staff accounts, plans, features
+// (entitlements) and subscriptions. Managed from the pencil_admin app.
+
+enum PlatformAdminRole {
+  SUPER_ADMIN
+  OPERATIONS
+  SUPPORT
+  BILLING
+}
+
+enum FeatureType {
+  /// On/off capability, e.g. `einvoicing.zatca`.
+  BOOLEAN
+  /// Numeric quota, e.g. `users.max` = 5. NULL limit = unlimited.
+  LIMIT
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+model PlatformAdmin {
+  id                  String            @id @default(uuid(7)) @db.Uuid
+  email               String            @unique @db.VarChar(254)
+  passwordHash        String            @map("password_hash") @db.VarChar(255)
+  fullName            String            @map("full_name") @db.VarChar(150)
+  role                PlatformAdminRole
+  isActive            Boolean           @default(true) @map("is_active")
+  failedLoginAttempts Int               @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?         @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt         DateTime?         @map("last_login_at") @db.Timestamptz(3)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions PlatformSession[]
+
+  @@map("platform_admins")
+}
+
+model PlatformSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  adminId           String    @map("admin_id") @db.Uuid
+  tokenHash         String    @map("token_hash") @db.Char(64)
+  previousTokenHash String?   @map("previous_token_hash") @db.Char(64)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(50)
+  ipAddress         String?   @map("ip_address") @db.VarChar(45)
+  userAgent         String?   @map("user_agent") @db.VarChar(512)
+  lastUsedAt        DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@map("platform_sessions")
+}
+
+model Feature {
+  /// Stable machine key, e.g. `einvoicing.zatca`, `users.max`.
+  key         String      @id @db.VarChar(100)
+  name        String      @db.VarChar(150)
+  description String?     @db.VarChar(500)
+  type        FeatureType
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  planFeatures PlanFeature[]
+  overrides    TenantFeatureOverride[]
+
+  @@map("features")
+}
+
+model Plan {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true) @map("is_active")
+  /// Hidden plans can still be assigned by platform staff (custom deals).
+  isPublic    Boolean  @default(true) @map("is_public")
+  trialDays   Int      @default(14) @map("trial_days")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  prices        PlanPrice[]
+  features      PlanFeature[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model PlanPrice {
+  id       String          @id @default(uuid(7)) @db.Uuid
+  planId   String          @map("plan_id") @db.Uuid
+  currency String          @db.Char(3)
+  interval BillingInterval
+  /// Scale 3 so JOD (3 minor digits) is exact.
+  amount   Decimal         @db.Decimal(14, 3)
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, currency, interval])
+  @@map("plan_prices")
+}
+
+model PlanFeature {
+  planId     String  @map("plan_id") @db.Uuid
+  featureKey String  @map("feature_key") @db.VarChar(100)
+  enabled    Boolean @default(true)
+  limitValue Int?    @map("limit_value")
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@id([planId, featureKey])
+  @@index([featureKey])
+  @@map("plan_features")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  tenantId           String             @unique @map("tenant_id") @db.Uuid
+  planId             String             @map("plan_id") @db.Uuid
+  status             SubscriptionStatus
+  billingInterval    BillingInterval    @map("billing_interval")
+  currency           String             @db.Char(3)
+  trialEndsAt        DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  currentPeriodStart DateTime           @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd   DateTime           @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd  Boolean            @default(false) @map("cancel_at_period_end")
+  canceledAt         DateTime?          @map("canceled_at") @db.Timestamptz(3)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([status, currentPeriodEnd])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+/// Per-tenant exception to the plan (custom deals, beta access, grace quota).
+model TenantFeatureOverride {
+  tenantId    String    @map("tenant_id") @db.Uuid
+  featureKey  String    @map("feature_key") @db.VarChar(100)
+  enabled     Boolean
+  limitValue  Int?      @map("limit_value")
+  reason      String?   @db.VarChar(500)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@id([tenantId, featureKey])
+  @@index([featureKey])
+  @@map("tenant_feature_overrides")
+}
