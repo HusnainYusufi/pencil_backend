@@ -2,8 +2,9 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPi
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { buildPage } from '../../common/helpers/pagination.js';
 import { Idempotent } from '../../core/idempotency/idempotent.decorator.js';
-import { RequirePermissions, TenantAuth } from '../../core/security/decorators.js';
+import { RequireFeature, RequirePermissions, TenantAuth } from '../../core/security/decorators.js';
 import { Permission } from '../access/permissions.js';
+import { Feature } from '../entitlements/features.js';
 import { toFiscalPeriod, toFiscalYear, toJournalDetail, toJournalSummary } from './accounting.mappers.js';
 import { AccountsService } from './chart-of-accounts/accounts.service.js';
 import { DimensionsService } from './dimensions/dimensions.service.js';
@@ -22,6 +23,7 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
 
 @ApiTags('Accounting · Chart of accounts')
 @TenantAuth()
+@RequireFeature(Feature.CHART_OF_ACCOUNTS)
 @Controller('accounts')
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
@@ -73,6 +75,7 @@ export class FiscalController {
   }
 
   @Post('fiscal-years')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @ApiOperation({ summary: 'Open the next fiscal year (12 monthly periods)' })
   @RequirePermissions(Permission.PERIODS_MANAGE)
   async createNext() {
@@ -80,6 +83,7 @@ export class FiscalController {
   }
 
   @Post('fiscal-periods/:id/close')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Close a period: postings dated inside it are rejected' })
   @RequirePermissions(Permission.PERIODS_MANAGE)
@@ -88,6 +92,7 @@ export class FiscalController {
   }
 
   @Post('fiscal-periods/:id/reopen')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(Permission.PERIODS_MANAGE)
   async reopen(@Param('id', ParseUUIDPipe) id: string) {
@@ -121,18 +126,21 @@ export class DimensionsController {
   }
 
   @Get('cost-centers')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_READ)
   listCostCenters(@Query() query: IncludeInactiveQueryDto) {
     return this.dimensions.listCostCenters(query.includeInactive ?? false);
   }
 
   @Post('cost-centers')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_MANAGE)
   createCostCenter(@Body() dto: CreateDimensionDto) {
     return this.dimensions.createCostCenter(dto);
   }
 
   @Patch('cost-centers/:id')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_MANAGE)
   updateCostCenter(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDimensionDto) {
     return this.dimensions.updateCostCenter(id, dto);
@@ -141,6 +149,7 @@ export class DimensionsController {
 
 @ApiTags('Accounting · Journal entries')
 @TenantAuth()
+@RequireFeature(Feature.JOURNALS)
 @Controller('journal-entries')
 export class JournalsController {
   constructor(private readonly journals: JournalService) {}
@@ -200,6 +209,7 @@ export class JournalsController {
 
 @ApiTags('Accounting · Reports')
 @TenantAuth()
+@RequireFeature(Feature.LEDGER_REPORTS)
 @Controller('reports')
 export class LedgerReportsController {
   constructor(private readonly reports: LedgerReportsService) {}

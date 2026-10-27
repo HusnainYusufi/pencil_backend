@@ -1,6 +1,6 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaService } from '../src/core/database/prisma.service.js';
-import { Api, createTestApp, signup, type SignedUpTenant } from './helpers.js';
+import { Api, createTestApp, platformLogin, signup, type SignedUpTenant } from './helpers.js';
 
 const YEAR = new Date().getUTCFullYear();
 const d = (monthDay: string, year = YEAR) => `${year}-${monthDay}`;
@@ -286,6 +286,10 @@ describe('Accounting core (e2e)', () => {
       const branch = await api.post('/branches', { token: owner.accessToken, body: { code: 'JED', name: 'Jeddah' } });
       expect(branch.status).toBe(403);
       expect(branch.body.error.code).toBe('PLAN_LIMIT_REACHED');
+
+      // Cost centers are a Professional feature.
+      const admin = await platformLogin(api);
+      await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: 'professional' } });
 
       const cc = await api.post('/cost-centers', { token: owner.accessToken, body: { code: 'MKT', name: 'Marketing' } });
       expect(cc.status).toBe(201);

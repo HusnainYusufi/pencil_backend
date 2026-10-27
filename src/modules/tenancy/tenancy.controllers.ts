@@ -50,14 +50,14 @@ export class RolesController {
   @Post()
   @ApiOperation({ summary: 'Create a custom role' })
   @RequirePermissions(Permission.ROLES_MANAGE)
-  @RequireFeature(Feature.ROLES_CUSTOM)
+  @RequireFeature(Feature.CUSTOM_ROLES)
   create(@Body() dto: CreateRoleDto) {
     return this.roles.create(dto);
   }
 
   @Patch(':id')
   @RequirePermissions(Permission.ROLES_MANAGE)
-  @RequireFeature(Feature.ROLES_CUSTOM)
+  @RequireFeature(Feature.CUSTOM_ROLES)
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto) {
     return this.roles.update(id, dto);
   }
