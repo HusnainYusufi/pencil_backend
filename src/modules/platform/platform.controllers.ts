@@ -34,6 +34,7 @@ import {
   UpdateTenantStatusDto,
 } from './dto/platform.dto.js';
 import { PlatformCatalogService } from './platform-catalog.service.js';
+import { PlatformStatsRepository } from './platform-stats.repository.js';
 import { PlatformTenantsService } from './platform-tenants.service.js';
 
 @ApiTags('Platform · Tenants')
@@ -174,5 +175,33 @@ export class PlatformAuditController {
   @RequirePermissions(PlatformPermission.AUDIT_READ)
   list(@Query() query: PlatformAuditQueryDto) {
     return this.audit.list(query);
+  }
+}
+
+@ApiTags('Platform · Overview')
+@PlatformAuth()
+@Controller('platform/stats')
+export class PlatformStatsController {
+  constructor(private readonly stats: PlatformStatsRepository) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Tenant, subscription and plan aggregates for the admin overview' })
+  @RequirePermissions(PlatformPermission.TENANTS_READ)
+  async overview() {
+    const [byStatus, byCountry, subscriptions, plans, signups, recent] = await Promise.all([
+      this.stats.tenantsByStatus(),
+      this.stats.tenantsByCountry(),
+      this.stats.subscriptionsByStatus(),
+      this.stats.tenantsByPlan(),
+      this.stats.signupsPerDay(30),
+      this.stats.recentTenants(6),
+    ]);
+    return {
+      tenants: { total: byStatus.reduce((n, r) => n + r.count, 0), byStatus, byCountry },
+      subscriptions,
+      plans,
+      signups: { last30Days: signups.reduce((n, r) => n + r.count, 0), perDay: signups },
+      recent,
+    };
   }
 }

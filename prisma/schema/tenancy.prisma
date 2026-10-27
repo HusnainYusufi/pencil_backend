@@ -26,6 +26,8 @@ model Tenant {
   /// VAT registration number (KSA) / tax identification number (JO).
   taxNumber              String?      @map("tax_number") @db.VarChar(32)
   commercialRegistration String?      @map("commercial_registration") @db.VarChar(32)
+  /// Month (1-12) in which the fiscal year starts.
+  fiscalYearStartMonth   Int          @default(1) @map("fiscal_year_start_month")
   status                 TenantStatus @default(ACTIVE)
   suspendedAt            DateTime?    @map("suspended_at") @db.Timestamptz(3)
   suspensionReason       String?      @map("suspension_reason") @db.VarChar(500)
@@ -37,6 +39,17 @@ model Tenant {
   subscription     Subscription?
   featureOverrides TenantFeatureOverride[]
   sessions         UserSession[]
+
+  // Accounting
+  accounts       Account[]
+  fiscalYears    FiscalYear[]
+  fiscalPeriods  FiscalPeriod[]
+  branches       Branch[]
+  costCenters    CostCenter[]
+  journalEntries JournalEntry[]
+  journalLines   JournalLine[]
+  ledgerEntries  LedgerEntry[]
+  numberSeries   NumberSeries[]
 
   @@index([status])
   @@index([country])

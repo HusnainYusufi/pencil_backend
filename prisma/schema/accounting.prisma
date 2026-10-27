@@ -1,0 +1,278 @@
+// Accounting core: chart of accounts, fiscal calendar, analytic dimensions,
+// journals and the general ledger. Every table here is tenant-scoped (RLS).
+//
+// Journals vs ledger:
+//   journal_entries / journal_lines  the documents (drafts are editable)
+//   ledger_entries                   the books: written only when an entry is
+//                                    posted, append-only and always balanced
+//                                    (enforced by database triggers). Every
+//                                    report reads from here.
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+/// Drives financial-statement layout and default posting behaviour.
+enum AccountSubtype {
+  CASH
+  BANK
+  ACCOUNTS_RECEIVABLE
+  INVENTORY
+  TAX_RECEIVABLE
+  OTHER_CURRENT_ASSET
+  FIXED_ASSET
+  ACCUMULATED_DEPRECIATION
+  OTHER_NON_CURRENT_ASSET
+  ACCOUNTS_PAYABLE
+  TAX_PAYABLE
+  OTHER_CURRENT_LIABILITY
+  NON_CURRENT_LIABILITY
+  EQUITY
+  RETAINED_EARNINGS
+  OPERATING_REVENUE
+  OTHER_REVENUE
+  COST_OF_SALES
+  OPERATING_EXPENSE
+  OTHER_EXPENSE
+}
+
+enum FiscalStatus {
+  OPEN
+  CLOSED
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+}
+
+/// What created the entry. Only MANUAL / OPENING_BALANCE entries are edited
+/// by users; the others are produced by their source documents.
+enum JournalSource {
+  MANUAL
+  OPENING_BALANCE
+  REVERSAL
+}
+
+model Account {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  parentId    String?        @map("parent_id") @db.Uuid
+  code        String         @db.VarChar(20)
+  name        String         @db.VarChar(150)
+  nameAr      String?        @map("name_ar") @db.VarChar(150)
+  description String?        @db.VarChar(500)
+  type        AccountType
+  subtype     AccountSubtype
+  /// Group (header) accounts organise the tree and can never be posted to.
+  isGroup     Boolean        @default(false) @map("is_group")
+  /// Stable role used by posting rules, e.g. `accounts_receivable`, `vat_output`.
+  systemKey   String?        @map("system_key") @db.VarChar(50)
+  isActive    Boolean        @default(true) @map("is_active")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent        Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Account[]     @relation("AccountTree")
+  journalLines  JournalLine[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, systemKey])
+  @@index([tenantId, parentId])
+  @@map("accounts")
+}
+
+model FiscalYear {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  name      String       @db.VarChar(50)
+  startDate DateTime     @map("start_date") @db.Date
+  endDate   DateTime     @map("end_date") @db.Date
+  status    FiscalStatus @default(OPEN)
+  closedAt  DateTime?    @map("closed_at") @db.Timestamptz(3)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periods FiscalPeriod[]
+
+  @@unique([tenantId, startDate])
+  @@map("fiscal_years")
+}
+
+/// Monthly posting periods. A CLOSED period rejects postings dated inside it.
+model FiscalPeriod {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
+  fiscalYearId String       @map("fiscal_year_id") @db.Uuid
+  number       Int
+  startDate    DateTime     @map("start_date") @db.Date
+  endDate      DateTime     @map("end_date") @db.Date
+  status       FiscalStatus @default(OPEN)
+  closedAt     DateTime?    @map("closed_at") @db.Timestamptz(3)
+  closedById   String?      @map("closed_by_id") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fiscalYear    FiscalYear    @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+
+  @@unique([fiscalYearId, number])
+  @@index([tenantId, startDate])
+  @@map("fiscal_periods")
+}
+
+model Branch {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(150)
+  nameAr    String?  @map("name_ar") @db.VarChar(150)
+  /// Exactly one default branch per tenant (partial unique index).
+  isDefault Boolean  @default(false) @map("is_default")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalLines  JournalLine[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([tenantId, code])
+  @@map("branches")
+}
+
+model CostCenter {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(150)
+  nameAr    String?  @map("name_ar") @db.VarChar(150)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalLines  JournalLine[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([tenantId, code])
+  @@map("cost_centers")
+}
+
+model JournalEntry {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  tenantId       String        @map("tenant_id") @db.Uuid
+  /// Gapless per tenant/year, assigned at posting (e.g. JV-2026-000042).
+  number         String?       @db.VarChar(30)
+  date           DateTime      @db.Date
+  status         JournalStatus @default(DRAFT)
+  source         JournalSource @default(MANUAL)
+  /// Originating document (invoice, payment, ...) for non-manual sources.
+  sourceId       String?       @map("source_id") @db.Uuid
+  reference      String?       @db.VarChar(100)
+  memo           String?       @db.VarChar(1000)
+  currency       String        @db.Char(3)
+  /// Base-currency units per 1 unit of `currency`.
+  exchangeRate   Decimal       @default(1) @map("exchange_rate") @db.Decimal(18, 8)
+  /// Sum of debits in entry currency (listing convenience).
+  totalAmount    Decimal       @map("total_amount") @db.Decimal(20, 4)
+  fiscalPeriodId String?       @map("fiscal_period_id") @db.Uuid
+  /// Set on a reversal entry: the entry it cancels (one reversal max).
+  reversalOfId   String?       @unique @map("reversal_of_id") @db.Uuid
+  createdById    String?       @map("created_by_id") @db.Uuid
+  postedById     String?       @map("posted_by_id") @db.Uuid
+  postedAt       DateTime?     @map("posted_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines         JournalLine[]
+  ledgerEntries LedgerEntry[]
+  reversalOf    JournalEntry? @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy    JournalEntry? @relation("JournalReversal")
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, date])
+  @@index([tenantId, source, sourceId])
+  @@map("journal_entries")
+}
+
+/// Exactly one of debit / credit is positive (CHECK constraint).
+model JournalLine {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  journalEntryId String  @map("journal_entry_id") @db.Uuid
+  lineNo         Int     @map("line_no")
+  accountId      String  @map("account_id") @db.Uuid
+  description    String? @db.VarChar(500)
+  debit          Decimal @default(0) @db.Decimal(20, 4)
+  credit         Decimal @default(0) @db.Decimal(20, 4)
+  branchId       String? @map("branch_id") @db.Uuid
+  costCenterId   String? @map("cost_center_id") @db.Uuid
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@unique([journalEntryId, lineNo])
+  @@index([tenantId, accountId])
+  @@map("journal_lines")
+}
+
+/// The general ledger. Append-only and balanced per journal entry, both
+/// enforced in Postgres. Amounts are in the tenant's base currency;
+/// `txnDebit` / `txnCredit` keep the original currency amounts.
+model LedgerEntry {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  journalEntryId String   @map("journal_entry_id") @db.Uuid
+  journalLineId  String?  @map("journal_line_id") @db.Uuid
+  accountId      String   @map("account_id") @db.Uuid
+  fiscalPeriodId String   @map("fiscal_period_id") @db.Uuid
+  date           DateTime @db.Date
+  debit          Decimal  @default(0) @db.Decimal(20, 4)
+  credit         Decimal  @default(0) @db.Decimal(20, 4)
+  currency       String   @db.Char(3)
+  txnDebit       Decimal  @default(0) @map("txn_debit") @db.Decimal(20, 4)
+  txnCredit      Decimal  @default(0) @map("txn_credit") @db.Decimal(20, 4)
+  branchId       String?  @map("branch_id") @db.Uuid
+  costCenterId   String?  @map("cost_center_id") @db.Uuid
+  description    String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  fiscalPeriod FiscalPeriod @relation(fields: [fiscalPeriodId], references: [id], onDelete: Restrict)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, accountId, date])
+  @@index([tenantId, date])
+  @@index([journalEntryId])
+  @@map("ledger_entries")
+}
+
+/// Gapless document numbering: incremented inside the posting transaction,
+/// so a rollback never burns a number (required for ZATCA invoice counters).
+model NumberSeries {
+  tenantId  String @map("tenant_id") @db.Uuid
+  docType   String @map("doc_type") @db.VarChar(30)
+  year      Int
+  nextValue Int    @map("next_value")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, docType, year])
+  @@map("number_series")
+}

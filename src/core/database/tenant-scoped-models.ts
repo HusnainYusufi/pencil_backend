@@ -12,4 +12,14 @@ import type { Prisma } from '../../generated/prisma/client.js';
 export const TENANT_SCOPED_MODELS: ReadonlySet<Prisma.ModelName> = new Set<Prisma.ModelName>([
   'Role',
   'AuditLog',
+  // Accounting
+  'Account',
+  'FiscalYear',
+  'FiscalPeriod',
+  'Branch',
+  'CostCenter',
+  'JournalEntry',
+  'JournalLine',
+  'LedgerEntry',
+  'NumberSeries',
 ]);

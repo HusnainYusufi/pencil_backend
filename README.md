@@ -115,6 +115,26 @@ Use `common/helpers/money.ts`: always `Decimal`, rounded half-up to the currency
 (SAR 2, **JOD 3**). It provides `computeTax` (inclusive/exclusive VAT) and `allocate` (penny-exact
 splits). The database uses `Decimal`, never `Float`.
 
+### Accounting core (`modules/accounting`)
+
+- **Chart of accounts:** each new company gets a bilingual (AR/EN) country template for KSA or Jordan.
+  Template accounts carry stable `systemKey`s (`accounts_receivable`, `vat_output`, `sales`, ...) that
+  posting rules target. Users can rename or renumber system accounts, but never delete them or change
+  their type.
+- **Fiscal calendar:** fiscal years with monthly periods. Closed periods reject postings. Posting into
+  the year right after the latest one opens that year automatically.
+- **Journals → ledger:** journal entries are documents (`DRAFT` → `POSTED`, reversible).
+  `ledger_entries` is the book of record. It is written only by `PostingService` and is **append-only**
+  and **balanced per entry**, both enforced by Postgres triggers.
+- **Gapless numbering:** `JV-<year>-000001` comes from `number_series` inside the posting transaction,
+  so a rollback never burns a number. This is the same mechanism ZATCA invoice counters will use.
+- **Reports** read only from the ledger. The trial balance carries prior years' P&L into retained
+  earnings automatically (no closing entries needed). The account statement is cursor-paginated with a
+  running balance.
+
+New document types (sales invoices, payments, ...) must post through `PostingService`. Never write
+`ledger_entries` directly.
+
 ---
 
 ## Recipes

@@ -33,6 +33,39 @@ export function toLocalDate(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+/**
+ * Business dates (invoice date, journal date) are calendar days, stored as
+ * Postgres `date` and represented as UTC-midnight Date objects in JS.
+ */
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function parseDateOnly(value: string): Date {
+  const match = DATE_ONLY.exec(value);
+  if (!match) throw new Error(`Invalid date '${value}', expected YYYY-MM-DD`);
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (formatDateOnly(date) !== value) throw new Error(`Invalid calendar date '${value}'`);
+  return date;
+}
+
+export const formatDateOnly = (date: Date): string => date.toISOString().slice(0, 10);
+
+export const isDateOnly = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !DATE_ONLY.test(value)) return false;
+  try {
+    parseDateOnly(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Today's calendar date in the tenant's zone, as a date-only Date. */
+export const todayIn = (timeZone: string): Date => parseDateOnly(toLocalDate(new Date(), timeZone));
+
+/** Last day of the month containing `date` (UTC date-only arithmetic). */
+export const endOfMonth = (date: Date): Date =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+
 export interface HijriDate {
   year: number;
   month: number;

@@ -12,6 +12,7 @@ import { IdempotencyModule } from './core/idempotency/idempotency.module.js';
 import { LoggingModule } from './core/logging/logging.module.js';
 import { PermissionsGuard } from './core/security/permissions.guard.js';
 import { SecurityModule } from './core/security/security.module.js';
+import { AccountingModule } from './modules/accounting/accounting.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthGuard } from './modules/auth/auth.guard.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -44,6 +45,7 @@ import { TenancyModule } from './modules/tenancy/tenancy.module.js';
     TenancyModule,
     AuthModule,
     PlatformModule,
+    AccountingModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

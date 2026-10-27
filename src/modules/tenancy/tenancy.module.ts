@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { MembersService } from './members.service.js';
+import { TenantProvisioningHooks } from './provisioning-hooks.js';
 import { MembershipsRepository } from './repositories/memberships.repository.js';
 import { RolesRepository } from './repositories/roles.repository.js';
 import { SubscriptionsRepository } from './repositories/subscriptions.repository.js';
@@ -19,10 +20,17 @@ import { TenantService } from './tenant.service.js';
     RolesRepository,
     SubscriptionsRepository,
     TenantProvisioningService,
+    TenantProvisioningHooks,
     TenantService,
     RolesService,
     MembersService,
   ],
-  exports: [TenantsRepository, MembershipsRepository, SubscriptionsRepository, TenantProvisioningService],
+  exports: [
+    TenantsRepository,
+    MembershipsRepository,
+    SubscriptionsRepository,
+    TenantProvisioningService,
+    TenantProvisioningHooks,
+  ],
 })
 export class TenancyModule {}

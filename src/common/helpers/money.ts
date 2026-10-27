@@ -1,13 +1,15 @@
-import { Decimal } from 'decimal.js';
+import { Decimal as DecimalJs } from 'decimal.js';
 
 /**
  * Money is ALWAYS a Decimal (never a JS number) and is rounded only at
  * well-defined points, half-up, to the currency's minor units. JOD and other
  * dinar currencies have 3 decimals; SAR has 2.
  */
-const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
-export { D as Decimal };
-export type DecimalValue = Decimal.Value;
+const Decimal = DecimalJs.clone({ precision: 40, rounding: DecimalJs.ROUND_HALF_UP });
+/** Instance type of the configured Decimal (use as both value and type). */
+type Decimal = DecimalJs;
+export { Decimal };
+export type DecimalValue = DecimalJs.Value;
 
 const MINOR_UNITS: Readonly<Record<string, number>> = {
   SAR: 2,
@@ -29,16 +31,16 @@ export function minorUnits(currency: string): number {
 }
 
 export function toDecimal(value: DecimalValue): Decimal {
-  return new D(value);
+  return new Decimal(value);
 }
 
 /** Rounds half-up to the currency's minor units. */
 export function roundMoney(value: DecimalValue, currency: string): Decimal {
-  return new D(value).toDecimalPlaces(minorUnits(currency), D.ROUND_HALF_UP);
+  return new Decimal(value).toDecimalPlaces(minorUnits(currency), Decimal.ROUND_HALF_UP);
 }
 
 export function sumMoney(values: readonly DecimalValue[]): Decimal {
-  return values.reduce<Decimal>((acc, v) => acc.plus(v), new D(0));
+  return values.reduce<Decimal>((acc, v) => acc.plus(v), new Decimal(0));
 }
 
 /** Fixed-scale string for APIs / e-invoice XML, e.g. "10.500" for JOD. */
@@ -54,13 +56,13 @@ export function formatAmount(value: DecimalValue, currency: string): string {
 export function allocate(total: DecimalValue, ratios: readonly DecimalValue[], currency: string): Decimal[] {
   if (ratios.length === 0) throw new Error('allocate() needs at least one ratio');
   const scale = minorUnits(currency);
-  const unit = new D(10).pow(-scale);
+  const unit = new Decimal(10).pow(-scale);
   const rounded = roundMoney(total, currency);
   const ratioSum = sumMoney(ratios);
   if (ratioSum.isZero()) throw new Error('allocate() ratios must not sum to zero');
 
   const exact = ratios.map((r) => rounded.times(r).dividedBy(ratioSum));
-  const parts = exact.map((e) => e.toDecimalPlaces(scale, D.ROUND_DOWN));
+  const parts = exact.map((e) => e.toDecimalPlaces(scale, Decimal.ROUND_DOWN));
   let remainder = rounded.minus(sumMoney(parts));
   const order = exact
     .map((e, i) => ({ i, frac: e.minus(parts[i]!) }))
@@ -90,7 +92,7 @@ export function computeTax(
   currency: string,
   mode: 'exclusive' | 'inclusive' = 'exclusive',
 ): TaxBreakdown {
-  const r = new D(rate);
+  const r = new Decimal(rate);
   if (r.isNegative()) throw new Error('Tax rate must not be negative');
   if (mode === 'exclusive') {
     const net = roundMoney(amount, currency);
