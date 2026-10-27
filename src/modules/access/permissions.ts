@@ -17,6 +17,8 @@ export const Permission = {
   ACCOUNTS_MANAGE: 'accounts.manage',
   JOURNALS_READ: 'journals.read',
   JOURNALS_POST: 'journals.post',
+  /** Close / reopen fiscal periods and create fiscal years. */
+  PERIODS_MANAGE: 'periods.manage',
   CONTACTS_READ: 'contacts.read',
   CONTACTS_MANAGE: 'contacts.manage',
   INVOICES_READ: 'invoices.read',
