@@ -14,6 +14,7 @@ import { MembershipsRepository } from './repositories/memberships.repository.js'
 import { RolesRepository } from './repositories/roles.repository.js';
 import { SubscriptionsRepository } from './repositories/subscriptions.repository.js';
 import { TenantsRepository } from './repositories/tenants.repository.js';
+import { TenantProvisioningHooks } from './provisioning-hooks.js';
 import { assertValidTaxNumber } from './tax-number.js';
 
 export interface CompanyProfileInput {
@@ -48,6 +49,7 @@ export class TenantProvisioningService {
     private readonly subscriptions: SubscriptionsRepository,
     private readonly plans: PlansRepository,
     private readonly audit: AuditService,
+    private readonly hooks: TenantProvisioningHooks,
   ) {}
 
   /** Must run under system scope (`db.asSystem`): the tenant does not exist yet. */
@@ -98,6 +100,16 @@ export class TenantProvisioningService {
         currentPeriodStart: now,
         currentPeriodEnd: trial ? addDays(now, plan.trialDays) : addMonths(now, 1),
       });
+
+      for (const hook of this.hooks.list()) {
+        await hook.onTenantProvisioned({
+          id: tenant.id,
+          country: tenant.country,
+          baseCurrency: tenant.baseCurrency,
+          timezone: tenant.timezone,
+          fiscalYearStartMonth: tenant.fiscalYearStartMonth,
+        });
+      }
 
       await this.audit.record({
         action: 'tenant.provisioned',

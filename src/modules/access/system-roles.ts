@@ -36,6 +36,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       Permission.TENANT_READ,
       'accounts.*',
       'journals.*',
+      Permission.PERIODS_MANAGE,
       'contacts.*',
       'invoices.*',
       'bills.*',

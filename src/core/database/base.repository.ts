@@ -17,6 +17,15 @@ export abstract class BaseRepository {
   protected get client(): DbClient {
     return this.db.client;
   }
+
+  /**
+   * Raw SQL ($queryRaw / $executeRaw) bypasses the model-level scope
+   * extension, so run it through here: it joins the active transaction or
+   * opens one with the row-level-security scope applied.
+   */
+  protected inScope<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+    return this.db.transaction(fn);
+  }
 }
 
 /**
