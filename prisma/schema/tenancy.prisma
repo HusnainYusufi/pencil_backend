@@ -1,0 +1,84 @@
+// Tenancy: the tenant (a company / legal entity), its members and roles.
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+model Tenant {
+  id                     String       @id @default(uuid(7)) @db.Uuid
+  slug                   String       @unique @db.VarChar(63)
+  legalName              String       @map("legal_name") @db.VarChar(200)
+  tradeName              String?      @map("trade_name") @db.VarChar(200)
+  country                CountryCode
+  /// ISO-4217: SAR (2 minor digits) or JOD (3 minor digits).
+  baseCurrency           String       @map("base_currency") @db.Char(3)
+  /// IANA zone, e.g. Asia/Riyadh, Asia/Amman.
+  timezone               String       @db.VarChar(64)
+  locale                 String       @default("ar") @db.VarChar(10)
+  /// VAT registration number (KSA) / tax identification number (JO).
+  taxNumber              String?      @map("tax_number") @db.VarChar(32)
+  commercialRegistration String?      @map("commercial_registration") @db.VarChar(32)
+  status                 TenantStatus @default(ACTIVE)
+  suspendedAt            DateTime?    @map("suspended_at") @db.Timestamptz(3)
+  suspensionReason       String?      @map("suspension_reason") @db.VarChar(500)
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships      Membership[]
+  roles            Role[]
+  subscription     Subscription?
+  featureOverrides TenantFeatureOverride[]
+  sessions         UserSession[]
+
+  @@index([status])
+  @@index([country])
+  @@map("tenants")
+}
+
+/// Links a global user to a tenant with exactly one role.
+model Membership {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  roleId    String           @map("role_id") @db.Uuid
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("memberships")
+}
+
+/// Tenant-scoped (RLS). System roles are seeded per tenant from
+/// src/modules/access/system-roles.ts and cannot be edited or deleted.
+model Role {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String   @db.VarChar(64)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  permissions String[]
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([tenantId, key])
+  @@map("roles")
+}

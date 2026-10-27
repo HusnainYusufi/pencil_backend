@@ -1,0 +1,57 @@
+// Identity: global users (one person may belong to many tenants, e.g. an
+// accountant serving several companies) and their refresh-token sessions.
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id                  String     @id @default(uuid(7)) @db.Uuid
+  /// Always stored lower-cased and trimmed (see normalizeEmail()).
+  email               String     @unique @db.VarChar(254)
+  passwordHash        String     @map("password_hash") @db.VarChar(255)
+  fullName            String     @map("full_name") @db.VarChar(150)
+  phone               String?    @db.VarChar(20)
+  locale              String     @default("ar") @db.VarChar(10)
+  status              UserStatus @default(ACTIVE)
+  emailVerifiedAt     DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  passwordChangedAt   DateTime?  @map("password_changed_at") @db.Timestamptz(3)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+  sessions    UserSession[]
+
+  @@map("users")
+}
+
+/// One row per login. The refresh token is `<session id>.<secret>`; only the
+/// SHA-256 of the secret is stored. Rotation keeps the previous hash so that
+/// replay of an old token is detected and the whole session revoked.
+model UserSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  /// Tenant the session is currently working in (switchable).
+  activeTenantId    String?   @map("active_tenant_id") @db.Uuid
+  tokenHash         String    @map("token_hash") @db.Char(64)
+  previousTokenHash String?   @map("previous_token_hash") @db.Char(64)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(50)
+  ipAddress         String?   @map("ip_address") @db.VarChar(45)
+  userAgent         String?   @map("user_agent") @db.VarChar(512)
+  lastUsedAt        DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeTenant Tenant? @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
