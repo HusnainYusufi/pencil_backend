@@ -1,0 +1,48 @@
+# Pencil edge: automatic HTTPS (Let's Encrypt), HTTP/3, compression, headers.
+# Domains and allowlists come from env/caddy.env.
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(baseline) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+		-X-Powered-By
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Public API (tenant apps). Caddy ignores client-supplied X-Forwarded-For and
+# sets the real client IP, which the API trusts for exactly one hop.
+{$API_DOMAIN} {
+	import baseline
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy api:4100 {
+		health_uri /api/health/ready
+		health_interval 15s
+	}
+}
+
+# Platform console (Pencil staff only). Restrict to office/VPN ranges.
+{$ADMIN_DOMAIN} {
+	import baseline
+	@outside not remote_ip {$ADMIN_ALLOWED_IPS}
+	respond @outside "Forbidden" 403
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy admin:3000
+}

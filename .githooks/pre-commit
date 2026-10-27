@@ -1,0 +1,55 @@
+#!/bin/sh
+# Blocks secrets, env files, keys and backups from ever being committed.
+# Installed automatically by `npm install` (package.json "prepare" sets
+# core.hooksPath). CI runs gitleaks on every push as the server-side backstop.
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+status=0
+
+# 1. Forbidden files: env files (except *.example), keys, backups, dumps.
+bad_files=$(printf '%s\n' "$staged" \
+  | grep -Ei '(^|/)\.env($|\.)|\.env$|\.(pem|key|crt|p12|pfx|jks|keystore|bak|backup|old|orig|swp|dump)$|\.sql\.gz$|(^|/)id_(rsa|ed25519|ecdsa)|(^|/)(secrets|backups)/' \
+  | grep -Ev '\.example$' || true)
+if [ -n "$bad_files" ]; then
+  echo "✖ pre-commit: refusing to commit secret/env/backup files:" >&2
+  printf '    %s\n' $bad_files >&2
+  status=1
+fi
+
+# 2. Secret-looking content in added lines (templates and this hook excluded).
+added=$(git diff --cached -U0 --diff-filter=ACMR -- . ':(exclude)*.example' ':(exclude).githooks/*' ':(exclude)package-lock.json' \
+  | grep -E '^\+[^+]' || true)
+
+check() { # $1 = description, $2 = extended regex, $3 = optional allowlist regex
+  hits=$(printf '%s\n' "$added" | grep -E -- "$2" || true)
+  if [ -n "${3:-}" ] && [ -n "$hits" ]; then hits=$(printf '%s\n' "$hits" | grep -Ev -- "$3" || true); fi
+  if [ -n "$hits" ]; then
+    echo "✖ pre-commit: possible $1:" >&2
+    printf '%s\n' "$hits" | cut -c1-160 | sed 's/^/    /' >&2
+    status=1
+  fi
+}
+
+check "private key" '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+check "cloud/API token" 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{35}'
+# Database URLs with an inline password, except documented local-dev placeholders.
+check "database URL with a real password" 'postgres(ql)?://[^:/[:space:]]+:[^@[:space:]]+@' \
+  'postgres(ql)?://[^:/[:space:]]+:(postgres|pencil_app_dev|pencil_owner_dev|x|password|CHANGE_ME|__[A-Z_]+__)@'
+# Long random-looking values assigned to secret-named keys (test/dev fixtures allowed).
+check "hard-coded secret" "(SECRET|PASSWORD|PASSWD|TOKEN|API_KEY|PRIVATE_KEY)[A-Za-z_]*[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9+/_=.-]{24,}" \
+  "(change-me|replace-with|test-|example|__[A-Z_]+__|process\.env|\\\$\{|ChangeMe)"
+
+if [ "$status" -ne 0 ]; then
+  echo "" >&2
+  echo "Commit blocked. Keep secrets in untracked env files (see deploy/README.md)." >&2
+  echo "If this is a false positive, adjust .githooks/pre-commit in a reviewed commit." >&2
+fi
+
+# 3. Optional deep scan when gitleaks is installed locally.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner || status=1
+fi
+
+exit "$status"

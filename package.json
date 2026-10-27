@@ -25,7 +25,10 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:backfill": "tsx prisma/backfill-accounting.ts",
+    "db:release": "prisma migrate deploy && tsx prisma/seed.ts && tsx prisma/backfill-accounting.ts",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

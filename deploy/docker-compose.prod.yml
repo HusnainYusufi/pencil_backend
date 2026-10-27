@@ -1,0 +1,157 @@
+# =============================================================================
+# Pencil production stack: Caddy (TLS) → API + admin console → PostgreSQL
+#
+#   cd deploy
+#   ./generate-secrets.sh                      # once: creates env/*.env (never committed)
+#   docker compose -f docker-compose.prod.yml --profile bundled-db up -d --build
+#
+# Omit `--profile bundled-db` when using a managed PostgreSQL (recommended):
+# point DATABASE_URL / DATABASE_MIGRATION_URL in env/*.env at it instead.
+#
+# Security posture:
+#   - only Caddy publishes ports; Postgres sits on an internal-only network
+#   - every app container: non-root, read-only rootfs, all capabilities dropped,
+#     no-new-privileges, memory-limited, log-rotated
+#   - least-privilege secrets: each service gets only its own env file
+#     (the API never sees the schema-owner password; the admin never sees JWT keys)
+#   - migrations run in a one-shot job before the API starts
+# See deploy/README.md for the full runbook.
+# =============================================================================
+
+x-hardened: &hardened
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp" # HTTP/3
+    env_file: [env/caddy.env]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    networks: [web]
+    depends_on:
+      api: { condition: service_healthy }
+      admin: { condition: service_healthy }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # One-shot release job: migrate deploy → seed catalog → backfill accounting.
+  migrate:
+    image: ${MIGRATE_IMAGE:-pencil-migrate:latest}
+    build:
+      context: ${API_BUILD_CONTEXT:-..}
+      target: migrate
+    env_file: [env/migrate.env]
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [data, web] # web only for egress to a managed database
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+
+  api:
+    <<: *hardened
+    image: ${API_IMAGE:-pencil-api:latest}
+    build:
+      context: ${API_BUILD_CONTEXT:-..}
+      target: runtime
+    env_file: [env/api.env]
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4100"
+      TRUST_PROXY: "1" # exactly one hop: Caddy (public) or the admin server (internal)
+      COOKIE_SECURE: "true"
+      SWAGGER_ENABLED: "false"
+      LOG_FORMAT: json
+    tmpfs: [/tmp]
+    networks: [web, data]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { memory: 768M }
+
+  admin:
+    <<: *hardened
+    image: ${ADMIN_IMAGE:-pencil-admin:latest}
+    build:
+      context: ${ADMIN_BUILD_CONTEXT:-../../pencil_admin}
+    env_file: [env/admin.env]
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      # Server-to-server over the private Docker network; never exposed.
+      PENCIL_API_URL: http://api:4100/api/v1
+      COOKIE_SECURE: "true"
+      PENCIL_ENVIRONMENT: production
+    tmpfs: [/tmp, /app/.next/cache]
+    networks: [web]
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  # Single-VM installs only. Prefer a managed PostgreSQL with backups + PITR.
+  postgres:
+    image: postgres:17.11-alpine
+    profiles: [bundled-db]
+    restart: unless-stopped
+    env_file: [env/postgres.env]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c password_encryption=scram-sha-256
+      -c log_min_duration_statement=500
+      -c log_connections=on
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    shm_size: 256m
+    security_opt: ["no-new-privileges:true"]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pencil"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+networks:
+  web: {}
+  # No route to the outside world: only the API and the release job reach the database.
+  data:
+    internal: true
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

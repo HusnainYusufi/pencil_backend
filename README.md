@@ -37,6 +37,11 @@ Seeded platform admin (local only): `admin@pencil.local` / `ChangeMe!12345`.
 | `npm run test:e2e` | end-to-end tests against `pencil_test` (real HTTP pipeline + Postgres) |
 | `npm run typecheck` / `npm run lint` | TypeScript / oxlint |
 | `npm run db:migrate` | create a migration in development |
+| `npm run db:release` | release job: migrate deploy + seed + accounting backfill (idempotent) |
+
+**Production deployment:** see [deploy/README.md](deploy/README.md) (Caddy TLS, hardened containers, one-shot migrations, secret generation).
+
+**Never commit secrets.** `npm install` enables a pre-commit hook that blocks env/key/backup files and secret-looking content; CI scans every push with gitleaks.
 
 ---
 

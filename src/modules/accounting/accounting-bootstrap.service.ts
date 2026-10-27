@@ -1,16 +1,12 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { todayIn } from '../../common/helpers/date.js';
+import { Db } from '../../core/database/db.service.js';
 import { TenantProvisioningHooks, type ProvisionedTenant, type TenantProvisioningHook } from '../tenancy/provisioning-hooks.js';
-import { chartOfAccountsTemplate, templateLevels } from './chart-of-accounts/templates.js';
-import { fiscalYearContaining, fiscalYearName, monthlyPeriods } from './fiscal/fiscal-calendar.js';
-import { AccountsRepository } from './repositories/accounts.repository.js';
-import { DimensionsRepository } from './repositories/dimensions.repository.js';
-import { FiscalRepository } from './repositories/fiscal.repository.js';
+import { bootstrapAccounting } from './bootstrap-accounting.js';
 
 /**
- * Makes a new company ready to book transactions on day one: country chart
- * of accounts, main branch and the current fiscal year with 12 open periods.
- * Runs inside the provisioning transaction.
+ * Seeds accounting for every new company, inside the provisioning
+ * transaction (system scope). The same routine backfills older companies:
+ * see prisma/backfill-accounting.ts.
  */
 @Injectable()
 export class AccountingBootstrapService implements TenantProvisioningHook, OnModuleInit {
@@ -18,9 +14,7 @@ export class AccountingBootstrapService implements TenantProvisioningHook, OnMod
 
   constructor(
     private readonly hooks: TenantProvisioningHooks,
-    private readonly accounts: AccountsRepository,
-    private readonly dimensions: DimensionsRepository,
-    private readonly fiscal: FiscalRepository,
+    private readonly db: Db,
   ) {}
 
   onModuleInit(): void {
@@ -28,9 +22,6 @@ export class AccountingBootstrapService implements TenantProvisioningHook, OnMod
   }
 
   async onTenantProvisioned(tenant: ProvisionedTenant): Promise<void> {
-    await this.accounts.createFromTemplate(tenant.id, templateLevels(chartOfAccountsTemplate(tenant.country)));
-    await this.dimensions.createDefaultBranch(tenant.id);
-    const year = fiscalYearContaining(todayIn(tenant.timezone), tenant.fiscalYearStartMonth);
-    await this.fiscal.createYear(tenant.id, { ...year, name: fiscalYearName(year) }, monthlyPeriods(year));
+    await bootstrapAccounting(this.db.client, tenant);
   }
 }

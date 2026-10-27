@@ -1,11 +1,46 @@
+# --- build & deps -------------------------------------------------------------
 node_modules/
 dist/
 coverage/
-.env
-.env.*
-!.env.example
 src/generated/
+*.tsbuildinfo
 *.log
 .DS_Store
+
+# --- secrets: NEVER commit (also enforced by .githooks/pre-commit + CI) --------
+# Any env file, anywhere; only *.example templates are allowed.
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+# Deployment secrets generated on the server
+deploy/env/*
+!deploy/env/*.example
+# Keys, certificates, keystores
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+id_ecdsa*
+# Backups, dumps and editor leftovers (often contain real data)
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.dump
+*.sql.gz
+*.tar.gz
+backups/
+secrets/
+
+# --- local state & tool caches -----------------------------------------------
 .local-db/
-*.tsbuildinfo
+/graft/
+.trail/cache/
