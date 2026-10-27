@@ -1,9 +1,30 @@
+# Never send secrets, local state or tooling into a Docker build context.
+.git
+.github
+.githooks
+.vscode
 node_modules
 dist
 coverage
 src/generated
+test
+deploy
+graft
+.trail
+.local-db
+*.log
+
+# Secrets and backups (defence in depth; also blocked by .gitignore + pre-commit)
 .env
 .env.*
-.git
-.vscode
-*.log
+*.env
+*.bak
+*.backup
+*.old
+*.orig
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz

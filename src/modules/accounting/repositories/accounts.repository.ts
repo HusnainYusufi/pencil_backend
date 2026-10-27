@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TenantScopedRepository } from '../../../core/database/base.repository.js';
 import type { Account, AccountType, Prisma } from '../../../generated/prisma/client.js';
-import { typeOfTemplate, type AccountTemplate } from '../chart-of-accounts/templates.js';
 
 export interface AccountListFilter {
   type?: AccountType;
@@ -79,29 +78,4 @@ export class AccountsRepository extends TenantScopedRepository {
     return lines + ledger > 0;
   }
 
-  /**
-   * Bulk-creates a chart from templates for a NEW tenant (provisioning runs
-   * in system scope, hence the explicit tenant id). One insert per tree level.
-   */
-  async createFromTemplate(tenantId: string, levels: AccountTemplate[][]): Promise<number> {
-    const idByCode = new Map<string, string>();
-    for (const level of levels) {
-      const created = await this.client.account.createManyAndReturn({
-        data: level.map((t) => ({
-          tenantId,
-          code: t.code,
-          name: t.name,
-          nameAr: t.nameAr,
-          type: typeOfTemplate(t),
-          subtype: t.subtype,
-          isGroup: t.isGroup ?? false,
-          systemKey: t.systemKey ?? null,
-          parentId: t.parent ? idByCode.get(t.parent)! : null,
-        })),
-        select: { id: true, code: true },
-      });
-      for (const row of created) idByCode.set(row.code, row.id);
-    }
-    return idByCode.size;
-  }
 }

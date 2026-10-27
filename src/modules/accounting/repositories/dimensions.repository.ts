@@ -28,12 +28,6 @@ export class DimensionsRepository extends TenantScopedRepository {
     return this.client.branch.update({ where: { id, tenantId: this.tenantId }, data });
   }
 
-  /** Provisioning (system scope): the tenant's first, default branch. */
-  createDefaultBranch(tenantId: string): Promise<Branch> {
-    return this.client.branch.create({
-      data: { tenantId, code: 'MAIN', name: 'Main branch', nameAr: 'الفرع الرئيسي', isDefault: true },
-    });
-  }
 
   listCostCenters(includeInactive = false): Promise<CostCenter[]> {
     return this.client.costCenter.findMany({
