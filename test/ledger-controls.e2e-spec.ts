@@ -134,9 +134,23 @@ describe('Ledger controls (e2e)', () => {
 
   describe('opening balances and cut-over', () => {
     it('dates opening balances on the cut-over date and reports them as opening, never as activity', async () => {
-      const { tenant, acc, post } = await company();
+      const { tenant, acc } = await company();
+      const customer = (await api.post('/contacts', { token: tenant.accessToken, body: { name: 'Opening customer', isCustomer: true } })).body;
+      // Receivables name the customer (sub-ledger rule), so build the lines by hand.
       const ob = (date: string) =>
-        post(date, [['1102', 'debit', '25000'], ['1103', 'debit', '5000'], ['3105', 'credit', '30000']], { source: 'OPENING_BALANCE' });
+        api.post('/journal-entries', {
+          token: tenant.accessToken,
+          body: {
+            date,
+            source: 'OPENING_BALANCE',
+            post: true,
+            lines: [
+              { accountId: acc('1102'), debit: '25000' },
+              { accountId: acc('1103'), debit: '5000', contactId: customer.id },
+              { accountId: acc('3105'), credit: '30000' },
+            ],
+          },
+        });
 
       expect((await ob(d('01-01'))).body.error.code).toBe('VALIDATION_FAILED'); // no cut-over date yet
       const settings = await api.patch('/books', { token: tenant.accessToken, body: { openingBalanceDate: d('01-01') } });
@@ -146,7 +160,11 @@ describe('Ledger controls (e2e)', () => {
       expect((await ob(d('01-02'))).status).toBe(400);
       const posted = await ob(d('01-01'));
       expect(posted.status).toBe(201); // receivables accept opening balances
-      expect((await post(d('12-31', PRIOR), [['1101', 'debit', '1'], ['3101', 'credit', '1']])).body.error.code).toBe('BOOKS_LOCKED');
+      const early = await api.post('/journal-entries', {
+        token: tenant.accessToken,
+        body: { date: d('12-31', PRIOR), post: true, lines: [{ accountId: acc('1101'), debit: '1' }, { accountId: acc('3101'), credit: '1' }] },
+      });
+      expect(early.body.error.code).toBe('BOOKS_LOCKED');
 
       const tb = (await api.get(`/reports/trial-balance?from=${d('01-01')}&to=${d('12-31')}`, { token: tenant.accessToken })).body;
       expect(row(tb, '1102')!.opening.debit).toBe('25000.00');

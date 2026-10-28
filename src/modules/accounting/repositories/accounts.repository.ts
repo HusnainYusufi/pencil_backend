@@ -9,7 +9,7 @@ export interface AccountListFilter {
   search?: string;
 }
 
-export type PostingAccount = Pick<Account, 'id' | 'code' | 'type' | 'isGroup' | 'isActive' | 'allowManualPosting'>;
+export type PostingAccount = Pick<Account, 'id' | 'code' | 'type' | 'isGroup' | 'isActive' | 'allowManualPosting' | 'systemKey'>;
 
 @Injectable()
 export class AccountsRepository extends TenantScopedRepository {
@@ -49,7 +49,7 @@ export class AccountsRepository extends TenantScopedRepository {
   findPostingInfo(ids: readonly string[]): Promise<PostingAccount[]> {
     return this.client.account.findMany({
       where: { tenantId: this.tenantId, id: { in: [...new Set(ids)] } },
-      select: { id: true, code: true, type: true, isGroup: true, isActive: true, allowManualPosting: true },
+      select: { id: true, code: true, type: true, isGroup: true, isActive: true, allowManualPosting: true, systemKey: true },
     });
   }
 

@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import { bootstrapAccounting, syncChartTemplate } from '../src/modules/accounting/bootstrap-accounting.js';
+import { ensureTaxProfile, syncTaxCodes } from '../src/modules/tax/tax-bootstrap.js';
 
 /**
  * Data migration, safe to run on every release:
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
 
   try {
     const tenants = await prisma.tenant.findMany({
-      select: { id: true, slug: true, country: true, timezone: true, fiscalYearStartMonth: true },
+      select: { id: true, slug: true, country: true, timezone: true, fiscalYearStartMonth: true, taxNumber: true },
       orderBy: { id: 'asc' },
     });
     let seeded = 0;
@@ -31,7 +32,11 @@ async function main(): Promise<void> {
       const result = await prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
         if ((await tx.account.count({ where: { tenantId: tenant.id } })) > 0) {
-          return { synced: await syncChartTemplate(tx, tenant) };
+          const chart = await syncChartTemplate(tx, tenant);
+          const tax = await syncTaxCodes(tx, tenant);
+          const profile = await ensureTaxProfile(tx, tenant);
+          const added = [...chart.added, ...tax.added.map((c) => `tax:${c}`), ...tax.ratesUpdated.map((c) => `rates:${c}`), ...(profile ? ['tax-profile'] : [])];
+          return { synced: { added } };
         }
         return { seeded: await bootstrapAccounting(tx, tenant) };
       });

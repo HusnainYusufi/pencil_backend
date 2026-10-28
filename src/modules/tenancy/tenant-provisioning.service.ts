@@ -108,6 +108,7 @@ export class TenantProvisioningService {
           baseCurrency: tenant.baseCurrency,
           timezone: tenant.timezone,
           fiscalYearStartMonth: tenant.fiscalYearStartMonth,
+          taxNumber: tenant.taxNumber,
         });
       }
 

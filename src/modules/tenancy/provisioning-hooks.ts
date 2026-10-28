@@ -7,6 +7,7 @@ export interface ProvisionedTenant {
   baseCurrency: string;
   timezone: string;
   fiscalYearStartMonth: number;
+  taxNumber: string | null;
 }
 
 /**

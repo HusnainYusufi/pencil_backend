@@ -3,6 +3,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import type { CountryCode } from '../../generated/prisma/enums.js';
 import { CONTROL_ACCOUNTS } from './chart-of-accounts/system-accounts.js';
 import { chartOfAccountsTemplate, templateLevels, typeOfTemplate, type AccountTemplate } from './chart-of-accounts/templates.js';
+import { ensureTaxProfile, syncTaxCodes } from '../tax/tax-bootstrap.js';
 import { fiscalYearContaining, fiscalYearName, monthlyPeriods } from './fiscal/fiscal-calendar.js';
 
 export interface AccountingSeedTenant {
@@ -10,6 +11,7 @@ export interface AccountingSeedTenant {
   country: CountryCode;
   timezone: string;
   fiscalYearStartMonth: number;
+  taxNumber?: string | null;
 }
 
 export interface AccountingSeedResult {
@@ -19,7 +21,8 @@ export interface AccountingSeedResult {
 
 /**
  * Makes a company ready to book transactions: the country chart of accounts,
- * the default branch and the current fiscal year with monthly periods.
+ * the default branch, the current fiscal year with monthly periods, the
+ * country tax codes (effective-dated rates) and the tax profile.
  *
  * Pure data setup against a transaction client, shared by
  *  - tenant provisioning (AccountingBootstrapService, inside the provisioning tx), and
@@ -51,6 +54,9 @@ export async function bootstrapAccounting(
       },
     },
   });
+
+  await syncTaxCodes(client, tenant);
+  await ensureTaxProfile(client, tenant);
 
   return { accounts: idByCode.size, fiscalYear: name };
 }

@@ -1,0 +1,240 @@
+// Master data: the company's tax profile, contacts (customers / suppliers),
+// items (products and services) and effective-dated tax codes. Everything
+// here is tenant-scoped (RLS) and is what invoices, bills and e-invoices draw on.
+
+/// VAT (KSA) / general sales tax (Jordan) registration of the company.
+enum TaxRegistration {
+  /// Not registered: no output tax (Jordan: income-tax-only seller).
+  NOT_REGISTERED
+  REGISTERED
+  /// Jordan: registered for general and special sales tax.
+  SPECIAL_SALES_TAX
+}
+
+enum TaxFilingFrequency {
+  MONTHLY
+  QUARTERLY
+  /// Jordan: two-month tax periods.
+  BIMONTHLY
+}
+
+/// Seller details printed on invoices and sent to ZATCA / JoFotara.
+model CompanyTaxProfile {
+  tenantId         String             @id @map("tenant_id") @db.Uuid
+  registration     TaxRegistration    @default(REGISTERED)
+  filingFrequency  TaxFilingFrequency @map("filing_frequency")
+  /// KSA National Address (4-digit building number, 5-digit postal code); Jordan address.
+  buildingNumber   String?            @map("building_number") @db.VarChar(10)
+  street           String?            @db.VarChar(150)
+  district         String?            @db.VarChar(100)
+  city             String?            @db.VarChar(100)
+  postalCode       String?            @map("postal_code") @db.VarChar(10)
+  additionalNumber String?            @map("additional_number") @db.VarChar(10)
+  /// JoFotara income-source (activity) sequence number.
+  activityNumber   String?            @map("activity_number") @db.VarChar(30)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("company_tax_profiles")
+}
+
+enum ContactType {
+  BUSINESS
+  INDIVIDUAL
+}
+
+/// Identification when a party has no VAT number (ZATCA buyer ID schemes;
+/// Jordan national number / passport).
+enum PartyIdScheme {
+  /// Tax identification number
+  TIN
+  /// Commercial registration number
+  CRN
+  /// MOMRAH licence
+  MOM
+  /// MHRSD licence
+  MLS
+  /// 700 number
+  UNIFIED_700
+  /// MISA licence
+  SAG
+  /// National ID
+  NAT
+  /// GCC ID
+  GCC
+  /// Iqama
+  IQA
+  /// Passport
+  PAS
+  OTH
+}
+
+/// A customer, a supplier, or both. Receivable / payable ledger lines must
+/// name one, so the control accounts always reconcile to their sub-ledgers.
+model Contact {
+  id                   String         @id @default(uuid(7)) @db.Uuid
+  tenantId             String         @map("tenant_id") @db.Uuid
+  code                 String?        @db.VarChar(30)
+  type                 ContactType    @default(BUSINESS)
+  isCustomer           Boolean        @default(false) @map("is_customer")
+  isSupplier           Boolean        @default(false) @map("is_supplier")
+  /// Registered (legal) name.
+  name                 String         @db.VarChar(200)
+  nameAr               String?        @map("name_ar") @db.VarChar(200)
+  /// VAT registration number (KSA) / tax identification number (Jordan / abroad).
+  taxNumber            String?        @map("tax_number") @db.VarChar(32)
+  idScheme             PartyIdScheme? @map("id_scheme")
+  idNumber             String?        @map("id_number") @db.VarChar(50)
+  /// ISO 3166-1 alpha-2.
+  country              String         @db.Char(2)
+  buildingNumber       String?        @map("building_number") @db.VarChar(10)
+  street               String?        @db.VarChar(150)
+  district             String?        @db.VarChar(100)
+  city                 String?        @db.VarChar(100)
+  postalCode           String?        @map("postal_code") @db.VarChar(10)
+  additionalNumber     String?        @map("additional_number") @db.VarChar(10)
+  email                String?        @db.VarChar(254)
+  phone                String?        @db.VarChar(20)
+  currency             String         @db.Char(3)
+  paymentTermsDays     Int            @default(0) @map("payment_terms_days")
+  /// Withholding tax deducted when paying this supplier.
+  withholdingTaxCodeId String?        @map("withholding_tax_code_id") @db.Uuid
+  notes                String?        @db.VarChar(1000)
+  isActive             Boolean        @default(true) @map("is_active")
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  withholdingTaxCode TaxCode?      @relation("ContactWithholding", fields: [withholdingTaxCodeId], references: [id], onDelete: Restrict)
+  journalLines       JournalLine[]
+  ledgerEntries      LedgerEntry[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, name])
+  @@map("contacts")
+}
+
+enum ItemType {
+  GOODS
+  SERVICE
+}
+
+/// Products and services sold or bought. Stock tracking comes with inventory.
+model Item {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  /// SKU / service code.
+  code              String   @db.VarChar(40)
+  type              ItemType
+  name              String   @db.VarChar(200)
+  nameAr            String?  @map("name_ar") @db.VarChar(200)
+  description       String?  @db.VarChar(1000)
+  /// UN/ECE Recommendation 20 unit code used by UBL e-invoices (PCE, HUR, KGM, ...).
+  unitCode          String   @default("PCE") @map("unit_code") @db.VarChar(3)
+  salePrice         Decimal? @map("sale_price") @db.Decimal(20, 4)
+  purchasePrice     Decimal? @map("purchase_price") @db.Decimal(20, 4)
+  salesAccountId    String?  @map("sales_account_id") @db.Uuid
+  purchaseAccountId String?  @map("purchase_account_id") @db.Uuid
+  salesTaxCodeId    String?  @map("sales_tax_code_id") @db.Uuid
+  purchaseTaxCodeId String?  @map("purchase_tax_code_id") @db.Uuid
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesAccount    Account? @relation("ItemSalesAccount", fields: [salesAccountId], references: [id], onDelete: Restrict)
+  purchaseAccount Account? @relation("ItemPurchaseAccount", fields: [purchaseAccountId], references: [id], onDelete: Restrict)
+  salesTaxCode    TaxCode? @relation("ItemSalesTax", fields: [salesTaxCodeId], references: [id], onDelete: Restrict)
+  purchaseTaxCode TaxCode? @relation("ItemPurchaseTax", fields: [purchaseTaxCodeId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, name])
+  @@map("items")
+}
+
+enum TaxCodeKind {
+  SALES
+  PURCHASE
+  WITHHOLDING
+}
+
+/// How a tax code behaves in the books and on the return (country-neutral).
+enum TaxTreatment {
+  /// Taxable at a positive rate.
+  STANDARD
+  /// Taxable at 0%: input tax stays recoverable.
+  ZERO_RATED
+  /// No tax, and input tax on related costs is not recoverable.
+  EXEMPT
+  OUT_OF_SCOPE
+  /// Buyer self-assesses: output and input tax post together.
+  REVERSE_CHARGE
+  /// Tax paid at customs on imported goods.
+  IMPORT
+  /// Deducted from a supplier payment and paid to the authority.
+  WITHHOLDING
+}
+
+/// A tax code of the company. Country codes are seeded from the template
+/// (isSystem) and kept in sync; companies may add their own.
+model TaxCode {
+  id                     String       @id @default(uuid(7)) @db.Uuid
+  tenantId               String       @map("tenant_id") @db.Uuid
+  code                   String       @db.VarChar(30)
+  name                   String       @db.VarChar(150)
+  nameAr                 String       @map("name_ar") @db.VarChar(150)
+  kind                   TaxCodeKind
+  treatment              TaxTreatment
+  /// E-invoice category as each authority defines it (ZATCA S/Z/E/O; JoFotara S/Z/O).
+  einvoiceCategory       String?      @map("einvoice_category") @db.VarChar(2)
+  /// Exemption / zero-rating reason (ZATCA VATEX-SA-...).
+  reasonCode             String?      @map("reason_code") @db.VarChar(30)
+  reasonText             String?      @map("reason_text") @db.VarChar(300)
+  /// Output tax (sales), input tax (purchases) or payable (withholding).
+  taxAccountId           String?      @map("tax_account_id") @db.Uuid
+  /// Reverse charge: account of the self-assessed output tax.
+  reverseChargeAccountId String?      @map("reverse_charge_account_id") @db.Uuid
+  /// Purchases: input tax can be claimed back.
+  recoverable            Boolean      @default(true)
+  /// Box of the tax return this code reports in (country-specific key).
+  returnBox              String?      @map("return_box") @db.VarChar(30)
+  isSystem               Boolean      @default(false) @map("is_system")
+  isActive               Boolean      @default(true) @map("is_active")
+  sortOrder              Int          @default(0) @map("sort_order")
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taxAccount           Account?      @relation("TaxCodeAccount", fields: [taxAccountId], references: [id], onDelete: Restrict)
+  reverseChargeAccount Account?      @relation("TaxCodeReverseCharge", fields: [reverseChargeAccountId], references: [id], onDelete: Restrict)
+  rates                TaxRate[]
+  contacts             Contact[]     @relation("ContactWithholding")
+  salesItems           Item[]        @relation("ItemSalesTax")
+  purchaseItems        Item[]        @relation("ItemPurchaseTax")
+  journalLines         JournalLine[]
+  ledgerEntries        LedgerEntry[]
+
+  @@unique([tenantId, code])
+  @@map("tax_codes")
+}
+
+/// Effective-dated rates: a document uses the rate in force on its date.
+/// Periods of one code never overlap (exclusion constraint).
+model TaxRate {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  taxCodeId     String    @map("tax_code_id") @db.Uuid
+  /// Percent, e.g. 15.0000.
+  ratePercent   Decimal   @map("rate_percent") @db.Decimal(7, 4)
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taxCode TaxCode @relation(fields: [taxCodeId], references: [id], onDelete: Cascade)
+
+  @@unique([taxCodeId, effectiveFrom])
+  @@map("tax_rates")
+}

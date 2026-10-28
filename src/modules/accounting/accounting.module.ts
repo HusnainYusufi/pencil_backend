@@ -25,6 +25,7 @@ import { FiscalRepository } from './repositories/fiscal.repository.js';
 import { JournalsRepository } from './repositories/journals.repository.js';
 import { LedgerRepository } from './repositories/ledger.repository.js';
 import { NumberSeriesRepository } from './repositories/number-series.repository.js';
+import { PartiesRepository } from './repositories/parties.repository.js';
 import { LedgerReportsService } from './reports/ledger-reports.service.js';
 
 /**
@@ -45,6 +46,7 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
     JournalsRepository,
     LedgerRepository,
     NumberSeriesRepository,
+    PartiesRepository,
     AccountsService,
     FiscalCalendarService,
     BooksService,
@@ -54,6 +56,6 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
     JournalService,
     LedgerReportsService,
   ],
-  exports: [AccountingContext, PostingService, AccountsRepository, FiscalCalendarService, NumberSeriesRepository],
+  exports: [AccountingContext, PostingService, AccountsRepository, LedgerRepository, FiscalCalendarService, NumberSeriesRepository, BooksService],
 })
 export class AccountingModule {}

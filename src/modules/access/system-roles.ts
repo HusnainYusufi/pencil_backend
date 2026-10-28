@@ -38,6 +38,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'journals.*',
       Permission.PERIODS_MANAGE,
       'contacts.*',
+      'items.*',
+      Permission.TAXES_READ,
       'invoices.*',
       'bills.*',
       Permission.REPORTS_READ,

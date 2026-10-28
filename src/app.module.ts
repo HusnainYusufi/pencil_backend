@@ -14,6 +14,9 @@ import { PermissionsGuard } from './core/security/permissions.guard.js';
 import { SecurityModule } from './core/security/security.module.js';
 import { AccountingModule } from './modules/accounting/accounting.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
+import { ContactsModule } from './modules/contacts/contacts.module.js';
+import { ItemsModule } from './modules/items/items.module.js';
+import { TaxModule } from './modules/tax/tax.module.js';
 import { AuthGuard } from './modules/auth/auth.guard.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module.js';
@@ -46,6 +49,9 @@ import { TenancyModule } from './modules/tenancy/tenancy.module.js';
     AuthModule,
     PlatformModule,
     AccountingModule,
+    TaxModule,
+    ContactsModule,
+    ItemsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

@@ -26,6 +26,11 @@ export const Permission = {
   BOOKS_CLOSE: 'books.close',
   CONTACTS_READ: 'contacts.read',
   CONTACTS_MANAGE: 'contacts.manage',
+  ITEMS_READ: 'items.read',
+  ITEMS_MANAGE: 'items.manage',
+  TAXES_READ: 'taxes.read',
+  /** Tax codes and the company tax profile: compliance settings (owners / admins). */
+  TAXES_MANAGE: 'taxes.manage',
   INVOICES_READ: 'invoices.read',
   INVOICES_MANAGE: 'invoices.manage',
   INVOICES_ISSUE: 'invoices.issue',
