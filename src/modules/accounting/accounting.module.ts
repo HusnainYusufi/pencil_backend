@@ -5,6 +5,7 @@ import { AccountingBootstrapService } from './accounting-bootstrap.service.js';
 import { AccountingContext } from './accounting-context.service.js';
 import {
   AccountsController,
+  BooksController,
   DimensionsController,
   FiscalController,
   JournalsController,
@@ -12,10 +13,13 @@ import {
 } from './accounting.controllers.js';
 import { AccountsService } from './chart-of-accounts/accounts.service.js';
 import { DimensionsService } from './dimensions/dimensions.service.js';
+import { BooksService } from './fiscal/books.service.js';
 import { FiscalCalendarService } from './fiscal/fiscal-calendar.service.js';
+import { YearEndService } from './fiscal/year-end.service.js';
 import { JournalService } from './journals/journal.service.js';
 import { PostingService } from './journals/posting.service.js';
 import { AccountsRepository } from './repositories/accounts.repository.js';
+import { BooksRepository } from './repositories/books.repository.js';
 import { DimensionsRepository } from './repositories/dimensions.repository.js';
 import { FiscalRepository } from './repositories/fiscal.repository.js';
 import { JournalsRepository } from './repositories/journals.repository.js';
@@ -30,11 +34,12 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
  */
 @Module({
   imports: [TenancyModule, EntitlementsModule],
-  controllers: [AccountsController, FiscalController, DimensionsController, JournalsController, LedgerReportsController],
+  controllers: [AccountsController, FiscalController, BooksController, DimensionsController, JournalsController, LedgerReportsController],
   providers: [
     AccountingContext,
     AccountingBootstrapService,
     AccountsRepository,
+    BooksRepository,
     FiscalRepository,
     DimensionsRepository,
     JournalsRepository,
@@ -42,6 +47,8 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
     NumberSeriesRepository,
     AccountsService,
     FiscalCalendarService,
+    BooksService,
+    YearEndService,
     DimensionsService,
     PostingService,
     JournalService,

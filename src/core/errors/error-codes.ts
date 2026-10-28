@@ -48,6 +48,12 @@ export const ErrorCode = {
   FISCAL_PERIOD_CLOSED: 'FISCAL_PERIOD_CLOSED',
   ENTRY_NOT_EDITABLE: 'ENTRY_NOT_EDITABLE',
   ENTRY_NOT_REVERSIBLE: 'ENTRY_NOT_REVERSIBLE',
+  /** Posting dated on/before the lock date, tax lock date, or before the opening balance date. */
+  BOOKS_LOCKED: 'BOOKS_LOCKED',
+  /** A fiscal year cannot be closed or reopened yet (details list what blocks it). */
+  YEAR_END_BLOCKED: 'YEAR_END_BLOCKED',
+  /** Months close in order. */
+  PERIOD_CLOSE_BLOCKED: 'PERIOD_CLOSE_BLOCKED',
 
   // Reliability
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
@@ -96,6 +102,9 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, HttpStatus> = {
   FISCAL_PERIOD_CLOSED: HttpStatus.UNPROCESSABLE_ENTITY,
   ENTRY_NOT_EDITABLE: HttpStatus.CONFLICT,
   ENTRY_NOT_REVERSIBLE: HttpStatus.CONFLICT,
+  BOOKS_LOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
+  YEAR_END_BLOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
+  PERIOD_CLOSE_BLOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
 
   IDEMPOTENCY_KEY_REUSED: HttpStatus.UNPROCESSABLE_ENTITY,
   IDEMPOTENCY_IN_PROGRESS: HttpStatus.CONFLICT,

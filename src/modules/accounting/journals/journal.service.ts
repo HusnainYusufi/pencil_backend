@@ -53,7 +53,7 @@ export class JournalService {
   async create(dto: CreateJournalEntryDto): Promise<JournalEntryDetail> {
     const { currency, journal } = await this.prepare(dto);
     const id = await this.db.transaction(async () => {
-      await this.posting.assertPostable(journal.lines);
+      await this.posting.assertPostable(journal.lines, dto.source ?? 'MANUAL');
       const entry = await this.journals.createDraft(
         {
           date: parseDateOnly(dto.date),
@@ -76,7 +76,7 @@ export class JournalService {
   async update(id: string, dto: UpdateJournalEntryDto): Promise<JournalEntryDetail> {
     const { currency, journal } = await this.prepare(dto);
     await this.db.transaction(async () => {
-      await this.posting.assertPostable(journal.lines);
+      await this.posting.assertPostable(journal.lines, dto.source ?? 'MANUAL');
       const replaced = await this.journals.replaceDraft(
         id,
         {
