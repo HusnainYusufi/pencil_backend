@@ -47,9 +47,23 @@ export function isUniqueViolation(error: unknown, field?: string): boolean {
   return index !== undefined && new RegExp(`_${field}(_[a-z0-9]+)*_key$`).test(index);
 }
 
+/**
+ * Ledger guards raised by database triggers (migration ledger_hardening).
+ * The application checks the same rules first with friendlier details; these
+ * only surface when a concurrent change wins the race.
+ */
+const LEDGER_GUARDS: Record<string, { code: ErrorCode; message: string }> = {
+  PNB01: { code: ErrorCode.BOOKS_LOCKED, message: 'The books are locked for that date' },
+  PNB02: { code: ErrorCode.FISCAL_PERIOD_CLOSED, message: 'The fiscal period or year is closed' },
+  PNB03: { code: ErrorCode.ENTRY_NOT_EDITABLE, message: 'Posted entries cannot be changed; post a reversing entry instead' },
+  PNB04: { code: ErrorCode.ACCOUNT_NOT_POSTABLE, message: 'An account on this entry cannot be posted to' },
+};
+
 /** Translates expected Prisma failures into API errors; undefined = unexpected. */
 export function mapPrismaError(error: unknown): AppException | undefined {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return undefined;
+  const guard = LEDGER_GUARDS[pgCode(error) ?? ''];
+  if (guard) return new AppException(guard.code, guard.message, undefined, { cause: error });
   switch (error.code) {
     case 'P2002':
       return new AppException(

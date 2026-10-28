@@ -87,7 +87,7 @@ describe('Platform admin API (e2e)', () => {
       const owner = await signup(api);
       await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: 'professional' } });
 
-      const override = await api.put(`/platform/tenants/${owner.tenantId}/features/roles.custom`, {
+      const override = await api.put(`/platform/tenants/${owner.tenantId}/features/platform.custom_roles`, {
         token: admin,
         body: { enabled: false, reason: 'Abuse investigation' },
       });
@@ -96,10 +96,10 @@ describe('Platform admin API (e2e)', () => {
       expect(res.body.error.code).toBe('FEATURE_NOT_AVAILABLE');
 
       const detail = await api.get(`/platform/tenants/${owner.tenantId}`, { token: admin });
-      expect(detail.body.entitlements['roles.custom'].enabled).toBe(false);
+      expect(detail.body.entitlements['platform.custom_roles'].enabled).toBe(false);
       expect(detail.body.overrides).toHaveLength(1);
 
-      expect((await api.delete(`/platform/tenants/${owner.tenantId}/features/roles.custom`, { token: admin })).status).toBe(204);
+      expect((await api.delete(`/platform/tenants/${owner.tenantId}/features/platform.custom_roles`, { token: admin })).status).toBe(204);
       expect((await api.post('/roles', { token: owner.accessToken, body: { name: 'X role', permissions: [] } })).status).toBe(201);
     });
 
@@ -132,6 +132,41 @@ describe('Platform admin API (e2e)', () => {
       const write = await api.patch('/tenant', { token: owner.accessToken, body: { tradeName: 'Nope' } });
       expect(write.status).toBe(402);
       expect(write.body.error.code).toBe('SUBSCRIPTION_INACTIVE');
+    });
+  });
+
+  describe('feature catalog', () => {
+    it('lists the module-grouped catalog with lifecycle status', async () => {
+      const res = await api.get('/platform/features', { token: admin });
+      const byKey = new Map(res.body.map((f: { key: string }) => [f.key, f]));
+      expect(byKey.get('accounting.journals')).toMatchObject({ module: 'ACCOUNTING', status: 'AVAILABLE' });
+      expect(byKey.get('sales.invoices')).toMatchObject({ module: 'SALES', status: 'COMING_SOON' });
+      expect(byKey.get('limits.users')).toMatchObject({ type: 'LIMIT', module: 'PLATFORM' });
+    });
+
+    it('switching a core accounting feature off locks its API for that company only', async () => {
+      const owner = await signup(api);
+      const other = await signup(api);
+      expect((await api.get('/journal-entries', { token: owner.accessToken })).status).toBe(200);
+
+      await api.put(`/platform/tenants/${owner.tenantId}/features/accounting.journals`, {
+        token: admin,
+        body: { enabled: false, reason: 'Feature toggle test' },
+      });
+      const locked = await api.get('/journal-entries', { token: owner.accessToken });
+      expect(locked.status).toBe(403);
+      expect(locked.body.error).toMatchObject({ code: 'FEATURE_NOT_AVAILABLE', details: { feature: 'accounting.journals' } });
+      expect((await api.get('/journal-entries', { token: other.accessToken })).status).toBe(200);
+
+      await api.delete(`/platform/tenants/${owner.tenantId}/features/accounting.journals`, { token: admin });
+      expect((await api.get('/journal-entries', { token: owner.accessToken })).status).toBe(200);
+    });
+
+    it('cost centers are a Professional feature', async () => {
+      const owner = await signup(api);
+      expect((await api.get('/cost-centers', { token: owner.accessToken })).body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+      await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: 'professional' } });
+      expect((await api.get('/cost-centers', { token: owner.accessToken })).status).toBe(200);
     });
   });
 
@@ -173,8 +208,8 @@ describe('Platform admin API (e2e)', () => {
           isPublic: false,
           trialDays: 0,
           features: [
-            { featureKey: 'users.max', enabled: true, limitValue: null },
-            { featureKey: 'api.access', enabled: true },
+            { featureKey: 'limits.users', enabled: true, limitValue: null },
+            { featureKey: 'platform.api_access', enabled: true },
           ],
           prices: [{ currency: 'JOD', interval: 'YEARLY', amount: '4999.500' }],
         },

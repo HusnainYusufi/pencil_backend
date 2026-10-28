@@ -1,8 +1,12 @@
 import { formatDateOnly, parseDateOnly } from '../../common/helpers/date.js';
+import { Decimal } from '../../common/helpers/money.js';
 import { AppException } from '../../core/errors/app.exception.js';
-import { SUBTYPE_TYPE, SystemAccount } from './chart-of-accounts/system-accounts.js';
+import { Permission } from '../access/permissions.js';
+import { systemRolePermissions } from '../access/system-roles.js';
+import { CONTROL_ACCOUNTS, SUBTYPE_TYPE, SystemAccount } from './chart-of-accounts/system-accounts.js';
 import { chartOfAccountsTemplate, templateLevels, typeOfTemplate } from './chart-of-accounts/templates.js';
 import { fiscalYearContaining, fiscalYearName, monthlyPeriods, nextFiscalYear } from './fiscal/fiscal-calendar.js';
+import { buildClosingEntry, mirrorLines } from './fiscal/year-end.js';
 import { normalizeJournalLines } from './journals/journal-rules.js';
 import { formatJournalNumber } from './journals/posting.service.js';
 
@@ -137,5 +141,84 @@ describe('double-entry rules', () => {
 
   it('formats gapless journal numbers', () => {
     expect(formatJournalNumber(2026, 42)).toBe('JV-2026-000042');
+  });
+});
+
+describe('year-end closing entry', () => {
+  const RE = 'retained-earnings';
+  const bal = (accountId: string, net: string, branchId: string | null = null) => ({
+    accountId,
+    branchId,
+    costCenterId: null,
+    net: new Decimal(net),
+  });
+  const sum = (lines: Array<{ debit: Decimal; credit: Decimal }>, side: 'debit' | 'credit') =>
+    lines.reduce((total, l) => total.plus(l[side]), new Decimal(0)).toFixed(2);
+
+  it('zeroes revenue and expenses into retained earnings', () => {
+    // Sales Cr 1,000 (net -1000), Rent Dr 400 (net +400): profit 600.
+    const plan = buildClosingEntry([bal('sales', '-1000'), bal('rent', '400')], RE, 'close');
+    expect(plan.profit.toFixed(2)).toBe('600.00');
+    const byAccount = Object.fromEntries(plan.lines.map((l) => [l.accountId, `${l.debit.toFixed(2)}/${l.credit.toFixed(2)}`]));
+    expect(byAccount).toEqual({ sales: '1000.00/0.00', rent: '0.00/400.00', [RE]: '0.00/600.00' });
+    expect(sum(plan.lines, 'debit')).toBe(sum(plan.lines, 'credit'));
+    expect(plan.total.toFixed(2)).toBe('1000.00');
+  });
+
+  it('debits retained earnings for a loss', () => {
+    const plan = buildClosingEntry([bal('sales', '-100'), bal('rent', '250')], RE, 'close');
+    expect(plan.profit.toFixed(2)).toBe('-150.00');
+    const re = plan.lines.find((l) => l.accountId === RE)!;
+    expect([re.debit.toFixed(2), re.credit.toFixed(2)]).toEqual(['150.00', '0.00']);
+  });
+
+  it('keeps the result per branch so branch equity stays right', () => {
+    const plan = buildClosingEntry([bal('sales', '-500', 'riyadh'), bal('sales', '-300', 'jeddah'), bal('rent', '100', 'jeddah')], RE, 'close');
+    const reLines = plan.lines.filter((l) => l.accountId === RE).map((l) => `${l.branchId}:${l.credit.toFixed(2)}`);
+    expect(reLines.sort()).toEqual(['jeddah:200.00', 'riyadh:500.00']);
+    expect(sum(plan.lines, 'debit')).toBe(sum(plan.lines, 'credit'));
+  });
+
+  it('produces no lines when nothing was booked, and mirrors lines for a reopen', () => {
+    expect(buildClosingEntry([], RE, 'close').lines).toHaveLength(0);
+    const plan = buildClosingEntry([bal('sales', '-75.125')], RE, 'close');
+    const mirrored = mirrorLines(plan.lines);
+    expect(mirrored.map((l) => [l.debit.toFixed(3), l.credit.toFixed(3)])).toEqual(plan.lines.map((l) => [l.credit.toFixed(3), l.debit.toFixed(3)]));
+  });
+});
+
+describe('control accounts and new categories', () => {
+  it.each(['SA', 'JO'] as const)('marks receivables, payables and VAT as control accounts (%s)', (country) => {
+    const keys = chartOfAccountsTemplate(country).filter((t) => t.systemKey && CONTROL_ACCOUNTS.has(t.systemKey)).map((t) => t.systemKey);
+    expect(keys.sort()).toEqual(['accounts_payable', 'accounts_receivable', 'vat_input', 'vat_output']);
+  });
+
+  it('presents zakat / income tax and finance costs separately', () => {
+    expect(SUBTYPE_TYPE.ZAKAT_AND_INCOME_TAX).toBe('EXPENSE');
+    expect(SUBTYPE_TYPE.FINANCE_COST).toBe('EXPENSE');
+    expect(SUBTYPE_TYPE.CURRENT_BORROWINGS).toBe('LIABILITY');
+    expect(SUBTYPE_TYPE.ALLOWANCE_FOR_CREDIT_LOSSES).toBe('ASSET');
+    expect(chartOfAccountsTemplate('SA').find((t) => t.code === '5303')?.subtype).toBe('ZAKAT_AND_INCOME_TAX');
+  });
+
+  it('adds Jordanian practice accounts only for Jordan', () => {
+    const jo = new Set(chartOfAccountsTemplate('JO').map((t) => t.code));
+    const sa = new Set(chartOfAccountsTemplate('SA').map((t) => t.code));
+    for (const code of ['1110', '2114', '2203']) {
+      expect(jo.has(code)).toBe(true);
+      expect(sa.has(code)).toBe(false);
+    }
+  });
+});
+
+describe('segregation of duties', () => {
+  const permissionsOf = (key: string) => systemRolePermissions(key) ?? [];
+
+  it('lets owners and admins close the books, but not bookkeepers', () => {
+    expect(permissionsOf('owner')).toContain('*');
+    expect(permissionsOf('admin')).toContain(Permission.BOOKS_CLOSE);
+    expect(permissionsOf('accountant')).not.toContain(Permission.BOOKS_CLOSE);
+    expect(permissionsOf('accountant')).not.toContain('books.*');
+    expect(permissionsOf('viewer')).not.toContain(Permission.BOOKS_CLOSE);
   });
 });

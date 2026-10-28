@@ -1,26 +1,23 @@
 import type { PrismaClient } from '../src/generated/prisma/client.js';
-import { Feature, FEATURE_DEFINITIONS } from '../src/modules/entitlements/features.js';
+import { FEATURE_DEFINITIONS } from '../src/modules/entitlements/features.js';
 
-type PlanSeed = {
-  code: string;
+type PlanCode = 'starter' | 'professional' | 'business';
+
+/** [currency, monthly, yearly]: placeholder prices; manage real ones in pencil_admin. */
+export const PLAN_SEEDS: Array<{
+  code: PlanCode;
   name: string;
   description: string;
   trialDays: number;
   sortOrder: number;
-  /** featureKey -> limit (number / null = unlimited) or true for boolean features. */
-  features: Record<string, number | null | true>;
-  /** [currency, monthly, yearly] — placeholder prices; manage real ones in pencil_admin. */
   prices: Array<[string, string, string]>;
-};
-
-export const PLAN_SEEDS: PlanSeed[] = [
+}> = [
   {
     code: 'starter',
     name: 'Starter',
-    description: 'Compliant e-invoicing and core accounting for small businesses.',
+    description: 'Core accounting and compliant e-invoicing for small businesses.',
     trialDays: 14,
     sortOrder: 1,
-    features: { [Feature.USERS_MAX]: 3, [Feature.BRANCHES_MAX]: 1, [Feature.EINVOICING]: true },
     prices: [
       ['SAR', '99.000', '990.000'],
       ['JOD', '19.000', '190.000'],
@@ -29,18 +26,9 @@ export const PLAN_SEEDS: PlanSeed[] = [
   {
     code: 'professional',
     name: 'Professional',
-    description: 'Growing teams: inventory, custom roles, audit trail, multi-currency.',
+    description: 'Growing teams: cost centers, inventory, custom roles, audit trail.',
     trialDays: 14,
     sortOrder: 2,
-    features: {
-      [Feature.USERS_MAX]: 10,
-      [Feature.BRANCHES_MAX]: 3,
-      [Feature.EINVOICING]: true,
-      [Feature.ROLES_CUSTOM]: true,
-      [Feature.AUDIT_LOG]: true,
-      [Feature.INVENTORY]: true,
-      [Feature.MULTI_CURRENCY]: true,
-    },
     prices: [
       ['SAR', '249.000', '2490.000'],
       ['JOD', '49.000', '490.000'],
@@ -49,19 +37,9 @@ export const PLAN_SEEDS: PlanSeed[] = [
   {
     code: 'business',
     name: 'Business',
-    description: 'Unlimited users and branches, API access and priority support.',
+    description: 'Unlimited users and branches, budgets, bank feeds and API access.',
     trialDays: 14,
     sortOrder: 3,
-    features: {
-      [Feature.USERS_MAX]: null,
-      [Feature.BRANCHES_MAX]: null,
-      [Feature.EINVOICING]: true,
-      [Feature.ROLES_CUSTOM]: true,
-      [Feature.AUDIT_LOG]: true,
-      [Feature.INVENTORY]: true,
-      [Feature.MULTI_CURRENCY]: true,
-      [Feature.API_ACCESS]: true,
-    },
     prices: [
       ['SAR', '549.000', '5490.000'],
       ['JOD', '99.000', '990.000'],
@@ -69,17 +47,27 @@ export const PLAN_SEEDS: PlanSeed[] = [
   },
 ];
 
+const grant = (value: true | number | null) => ({ enabled: true, limitValue: value === true ? null : value });
+
 /**
- * Idempotent: features are upserted (definitions live in code); plans are
- * only created when missing so edits made in pencil_admin are never clobbered.
+ * Idempotent and safe on every release:
+ *  - feature metadata (name, module, status, order) is synced from code;
+ *  - a feature seen for the FIRST time is granted to the seeded plans per its
+ *    catalog defaults; existing grants are never touched, so plan edits made in
+ *    pencil_admin always win;
+ *  - plans are only created when missing.
  */
-export async function seedCatalog(prisma: PrismaClient): Promise<void> {
+export async function seedCatalog(prisma: PrismaClient): Promise<{ newFeatures: string[] }> {
+  const newFeatures: typeof FEATURE_DEFINITIONS[number][] = [];
   for (const f of FEATURE_DEFINITIONS) {
-    await prisma.feature.upsert({
-      where: { key: f.key },
-      create: f,
-      update: { name: f.name, description: f.description },
-    });
+    const meta = { name: f.name, description: f.description, module: f.module, status: f.status, sortOrder: f.sortOrder };
+    const existing = await prisma.feature.findUnique({ where: { key: f.key }, select: { key: true } });
+    if (existing) {
+      await prisma.feature.update({ where: { key: f.key }, data: meta });
+    } else {
+      await prisma.feature.create({ data: { key: f.key, type: f.type, ...meta } });
+      newFeatures.push(f);
+    }
   }
 
   for (const plan of PLAN_SEEDS) {
@@ -93,11 +81,10 @@ export async function seedCatalog(prisma: PrismaClient): Promise<void> {
         sortOrder: plan.sortOrder,
         features: {
           createMany: {
-            data: Object.entries(plan.features).map(([featureKey, value]) => ({
-              featureKey,
-              enabled: true,
-              limitValue: value === true ? null : value,
-            })),
+            data: FEATURE_DEFINITIONS.flatMap((f) => {
+              const value = f.plans[plan.code];
+              return value === undefined ? [] : [{ featureKey: f.key, ...grant(value) }];
+            }),
           },
         },
         prices: {
@@ -111,4 +98,14 @@ export async function seedCatalog(prisma: PrismaClient): Promise<void> {
       },
     });
   }
+
+  // Introduce brand-new features into the existing seeded plans (once).
+  for (const f of newFeatures) {
+    for (const [code, value] of Object.entries(f.plans) as Array<[PlanCode, true | number | null]>) {
+      const plan = await prisma.plan.findUnique({ where: { code }, select: { id: true } });
+      if (!plan) continue;
+      await prisma.planFeature.createMany({ data: [{ planId: plan.id, featureKey: f.key, ...grant(value) }], skipDuplicates: true });
+    }
+  }
+  return { newFeatures: newFeatures.map((f) => f.key) };
 }

@@ -2,12 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPi
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { buildPage } from '../../common/helpers/pagination.js';
 import { Idempotent } from '../../core/idempotency/idempotent.decorator.js';
-import { RequirePermissions, TenantAuth } from '../../core/security/decorators.js';
+import { RequireFeature, RequirePermissions, TenantAuth } from '../../core/security/decorators.js';
 import { Permission } from '../access/permissions.js';
+import { Feature } from '../entitlements/features.js';
 import { toFiscalPeriod, toFiscalYear, toJournalDetail, toJournalSummary } from './accounting.mappers.js';
 import { AccountsService } from './chart-of-accounts/accounts.service.js';
 import { DimensionsService } from './dimensions/dimensions.service.js';
 import { AccountsQueryDto, CreateAccountDto, UpdateAccountDto } from './dto/accounts.dto.js';
+import { ReopenDto, UpdateBooksSettingsDto } from './dto/books.dto.js';
 import { CreateDimensionDto, IncludeInactiveQueryDto, UpdateDimensionDto } from './dto/dimensions.dto.js';
 import {
   CreateJournalEntryDto,
@@ -16,12 +18,15 @@ import {
   UpdateJournalEntryDto,
 } from './dto/journals.dto.js';
 import { AccountStatementQueryDto, TrialBalanceQueryDto } from './dto/reports.dto.js';
+import { BooksService } from './fiscal/books.service.js';
 import { FiscalCalendarService } from './fiscal/fiscal-calendar.service.js';
+import { YearEndService } from './fiscal/year-end.service.js';
 import { JournalService } from './journals/journal.service.js';
 import { LedgerReportsService } from './reports/ledger-reports.service.js';
 
 @ApiTags('Accounting · Chart of accounts')
 @TenantAuth()
+@RequireFeature(Feature.CHART_OF_ACCOUNTS)
 @Controller('accounts')
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
@@ -64,7 +69,10 @@ export class AccountsController {
 @TenantAuth()
 @Controller()
 export class FiscalController {
-  constructor(private readonly fiscal: FiscalCalendarService) {}
+  constructor(
+    private readonly fiscal: FiscalCalendarService,
+    private readonly yearEnd: YearEndService,
+  ) {}
 
   @Get('fiscal-years')
   @RequirePermissions(Permission.JOURNALS_READ)
@@ -73,6 +81,7 @@ export class FiscalController {
   }
 
   @Post('fiscal-years')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @ApiOperation({ summary: 'Open the next fiscal year (12 monthly periods)' })
   @RequirePermissions(Permission.PERIODS_MANAGE)
   async createNext() {
@@ -80,6 +89,7 @@ export class FiscalController {
   }
 
   @Post('fiscal-periods/:id/close')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Close a period: postings dated inside it are rejected' })
   @RequirePermissions(Permission.PERIODS_MANAGE)
@@ -88,10 +98,59 @@ export class FiscalController {
   }
 
   @Post('fiscal-periods/:id/reopen')
+  @RequireFeature(Feature.FISCAL_PERIODS)
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reopen a period (reason required; blocked behind the lock date)' })
   @RequirePermissions(Permission.PERIODS_MANAGE)
-  async reopen(@Param('id', ParseUUIDPipe) id: string) {
-    return toFiscalPeriod(await this.fiscal.reopenPeriod(id));
+  async reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReopenDto) {
+    return toFiscalPeriod(await this.fiscal.reopenPeriod(id, dto.reason));
+  }
+
+  @Get('fiscal-years/:id/close-preview')
+  @ApiOperation({ summary: 'Year-end close preview: result for the year and anything blocking the close' })
+  @RequirePermissions(Permission.JOURNALS_READ)
+  closePreview(@Param('id', ParseUUIDPipe) id: string) {
+    return this.yearEnd.preview(id);
+  }
+
+  @Post('fiscal-years/:id/close')
+  @RequireFeature(Feature.FISCAL_PERIODS)
+  @HttpCode(HttpStatus.OK)
+  @Idempotent()
+  @ApiOperation({ summary: 'Close a fiscal year: post the closing entry to retained earnings and lock the year' })
+  @RequirePermissions(Permission.BOOKS_CLOSE)
+  closeYear(@Param('id', ParseUUIDPipe) id: string) {
+    return this.yearEnd.close(id);
+  }
+
+  @Post('fiscal-years/:id/reopen')
+  @RequireFeature(Feature.FISCAL_PERIODS)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reopen a closed fiscal year (reason required; reverses its closing entry)' })
+  @RequirePermissions(Permission.BOOKS_CLOSE)
+  reopenYear(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReopenDto) {
+    return this.yearEnd.reopen(id, dto.reason);
+  }
+}
+
+@ApiTags('Accounting · Books controls')
+@TenantAuth()
+@Controller('books')
+export class BooksController {
+  constructor(private readonly books: BooksService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Lock dates, opening balance date and opening-balance equity check' })
+  @RequirePermissions(Permission.JOURNALS_READ)
+  get() {
+    return this.books.overview();
+  }
+
+  @Patch()
+  @ApiOperation({ summary: 'Set lock dates / opening balance date (reason required to loosen a lock)' })
+  @RequirePermissions(Permission.BOOKS_CLOSE)
+  update(@Body() dto: UpdateBooksSettingsDto) {
+    return this.books.update(dto);
   }
 }
 
@@ -121,18 +180,21 @@ export class DimensionsController {
   }
 
   @Get('cost-centers')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_READ)
   listCostCenters(@Query() query: IncludeInactiveQueryDto) {
     return this.dimensions.listCostCenters(query.includeInactive ?? false);
   }
 
   @Post('cost-centers')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_MANAGE)
   createCostCenter(@Body() dto: CreateDimensionDto) {
     return this.dimensions.createCostCenter(dto);
   }
 
   @Patch('cost-centers/:id')
+  @RequireFeature(Feature.COST_CENTERS)
   @RequirePermissions(Permission.ACCOUNTS_MANAGE)
   updateCostCenter(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDimensionDto) {
     return this.dimensions.updateCostCenter(id, dto);
@@ -141,6 +203,7 @@ export class DimensionsController {
 
 @ApiTags('Accounting · Journal entries')
 @TenantAuth()
+@RequireFeature(Feature.JOURNALS)
 @Controller('journal-entries')
 export class JournalsController {
   constructor(private readonly journals: JournalService) {}
@@ -200,6 +263,7 @@ export class JournalsController {
 
 @ApiTags('Accounting · Reports')
 @TenantAuth()
+@RequireFeature(Feature.LEDGER_REPORTS)
 @Controller('reports')
 export class LedgerReportsController {
   constructor(private readonly reports: LedgerReportsService) {}

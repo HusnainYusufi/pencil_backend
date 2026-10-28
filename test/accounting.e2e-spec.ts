@@ -1,6 +1,6 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaService } from '../src/core/database/prisma.service.js';
-import { Api, createTestApp, signup, type SignedUpTenant } from './helpers.js';
+import { Api, createTestApp, platformLogin, signup, type SignedUpTenant } from './helpers.js';
 
 const YEAR = new Date().getUTCFullYear();
 const d = (monthDay: string, year = YEAR) => `${year}-${monthDay}`;
@@ -143,8 +143,13 @@ describe('Accounting core (e2e)', () => {
   describe('fiscal periods', () => {
     it('blocks postings into a closed period until it is reopened', async () => {
       const years = await api.get('/fiscal-years', { token: owner.accessToken });
+      const january = years.body[0].periods.find((p: { number: number }) => p.number === 1);
       const february = years.body[0].periods.find((p: { number: number }) => p.number === 2);
 
+      // Months close in order.
+      const outOfOrder = await api.post(`/fiscal-periods/${february.id}/close`, { token: owner.accessToken });
+      expect(outOfOrder.body.error.code).toBe('PERIOD_CLOSE_BLOCKED');
+      expect((await api.post(`/fiscal-periods/${january.id}/close`, { token: owner.accessToken })).body.status).toBe('CLOSED');
       expect((await api.post(`/fiscal-periods/${february.id}/close`, { token: owner.accessToken })).body.status).toBe('CLOSED');
       const blocked = await api.post('/journal-entries', {
         token: owner.accessToken,
@@ -153,7 +158,14 @@ describe('Accounting core (e2e)', () => {
       expect(blocked.status).toBe(422);
       expect(blocked.body.error.code).toBe('FISCAL_PERIOD_CLOSED');
 
-      await api.post(`/fiscal-periods/${february.id}/reopen`, { token: owner.accessToken });
+      // Reopening always records why.
+      expect((await api.post(`/fiscal-periods/${february.id}/reopen`, { token: owner.accessToken, body: {} })).status).toBe(400);
+      const reopened = await api.post(`/fiscal-periods/${february.id}/reopen`, {
+        token: owner.accessToken,
+        body: { reason: 'Late supplier invoice for February' },
+      });
+      expect(reopened.body.status).toBe('OPEN');
+      await api.post(`/fiscal-periods/${january.id}/reopen`, { token: owner.accessToken, body: { reason: 'Reopen January for tests' } });
       const allowed = await api.post('/journal-entries', {
         token: owner.accessToken,
         body: journal([['1101', 'debit', '10'], ['3101', 'credit', '10']], { date: d('02-10'), post: true }),
@@ -257,7 +269,7 @@ describe('Accounting core (e2e)', () => {
     it('creates, validates and protects accounts', async () => {
       const created = await api.post('/accounts', {
         token: owner.accessToken,
-        body: { code: '5214', name: 'Software subscriptions', nameAr: 'اشتراكات البرمجيات', subtype: 'OPERATING_EXPENSE', parentId: acc('52') },
+        body: { code: '5290', name: 'Software subscriptions', nameAr: 'اشتراكات البرمجيات', subtype: 'OPERATING_EXPENSE', parentId: acc('52') },
       });
       expect(created.status).toBe(201);
       expect(created.body.type).toBe('EXPENSE');
@@ -286,6 +298,10 @@ describe('Accounting core (e2e)', () => {
       const branch = await api.post('/branches', { token: owner.accessToken, body: { code: 'JED', name: 'Jeddah' } });
       expect(branch.status).toBe(403);
       expect(branch.body.error.code).toBe('PLAN_LIMIT_REACHED');
+
+      // Cost centers are a Professional feature.
+      const admin = await platformLogin(api);
+      await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: 'professional' } });
 
       const cc = await api.post('/cost-centers', { token: owner.accessToken, body: { code: 'MKT', name: 'Marketing' } });
       expect(cc.status).toBe(201);
@@ -322,7 +338,7 @@ describe('Accounting core (e2e)', () => {
       expect(tb.body.rows).toHaveLength(0);
     });
 
-    it('keeps the ledger append-only and balanced even against direct SQL', async () => {
+    it('keeps the ledger append-only and tied to posted vouchers even against direct SQL', async () => {
       const prisma = app.get(PrismaService);
       const scoped = (sql: (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => Promise<unknown>) =>
         prisma.$transaction(async (tx) => {
@@ -343,10 +359,11 @@ describe('Accounting core (e2e)', () => {
       await expect(
         scoped(
           (tx) => tx.$executeRaw`
-            INSERT INTO ledger_entries (id, tenant_id, journal_entry_id, account_id, fiscal_period_id, date, debit, credit, currency)
-            VALUES (gen_random_uuid(), ${owner.tenantId}::uuid, ${entry.body.id}::uuid, ${acc('1101')}::uuid, ${period.id}::uuid, ${d('03-15')}::date, 9, 0, 'SAR')`,
+            INSERT INTO ledger_entries (id, tenant_id, journal_entry_id, journal_line_id, account_id, fiscal_period_id, date, debit, credit, currency)
+            VALUES (gen_random_uuid(), ${owner.tenantId}::uuid, ${entry.body.id}::uuid, ${entry.body.lines[0].id}::uuid,
+                    ${acc('1101')}::uuid, ${period.id}::uuid, ${d('03-15')}::date, 9, 0, 'SAR')`,
         ),
-      ).rejects.toThrow(/unbalanced/);
+      ).rejects.toThrow(/posted journal entry/);
     });
   });
 
