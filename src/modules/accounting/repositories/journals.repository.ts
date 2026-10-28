@@ -11,6 +11,8 @@ const ENTRY_DETAIL = {
       account: { select: { id: true, code: true, name: true, nameAr: true } },
       branch: { select: { id: true, code: true, name: true } },
       costCenter: { select: { id: true, code: true, name: true } },
+      contact: { select: { id: true, code: true, name: true, nameAr: true } },
+      taxCode: { select: { id: true, code: true, name: true, nameAr: true } },
     },
   },
   reversedBy: { select: { id: true, number: true, date: true } },
@@ -31,6 +33,7 @@ export interface JournalListFilter extends PageQuery {
 export interface JournalHeader {
   date: Date;
   source: JournalSource;
+  sourceType?: string | null;
   sourceId?: string | null;
   reference?: string | null;
   memo?: string | null;
@@ -50,6 +53,10 @@ const lineRows = (tenantId: string, lines: NormalizedJournalLine[]) =>
     credit: l.credit.toFixed(4),
     branchId: l.branchId,
     costCenterId: l.costCenterId,
+    contactId: l.contactId,
+    taxCodeId: l.taxCodeId,
+    taxRole: l.taxRole,
+    taxBase: l.taxBase?.toFixed(4) ?? null,
   }));
 
 @Injectable()

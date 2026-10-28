@@ -14,6 +14,8 @@ import { DimensionsRepository } from '../repositories/dimensions.repository.js';
 import { JournalsRepository } from '../repositories/journals.repository.js';
 import { LedgerRepository } from '../repositories/ledger.repository.js';
 import { NumberSeriesRepository } from '../repositories/number-series.repository.js';
+import { PartiesRepository } from '../repositories/parties.repository.js';
+import { SystemAccount } from '../chart-of-accounts/system-accounts.js';
 import type { NormalizedJournalLine } from './journal-rules.js';
 
 export const JOURNAL_NUMBER_PREFIX = 'JV';
@@ -48,6 +50,7 @@ export class PostingService {
     private readonly numbers: NumberSeriesRepository,
     private readonly accounts: AccountsRepository,
     private readonly dimensions: DimensionsRepository,
+    private readonly parties: PartiesRepository,
     private readonly audit: AuditService,
   ) {}
 
@@ -68,6 +71,10 @@ export class PostingService {
         description: l.description,
         branchId: l.branchId,
         costCenterId: l.costCenterId,
+        contactId: l.contactId,
+        taxCodeId: l.taxCodeId,
+        taxRole: l.taxRole,
+        taxBase: l.taxBase ? new Decimal(l.taxBase.toString()) : null,
       }));
       await this.assertPostable(lines, entry.source);
       await this.books.assertPostingAllowed(entry.date, entry.source);
@@ -103,6 +110,10 @@ export class PostingService {
             txnCredit: normalized.credit,
             branchId: line.branchId,
             costCenterId: line.costCenterId,
+            contactId: line.contactId,
+            taxCodeId: line.taxCodeId,
+            taxRole: line.taxRole,
+            taxBase: normalized.taxBase ? roundMoney(normalized.taxBase.times(rate), baseCurrency) : null,
             description: line.description ?? entry.memo,
           };
         }),
@@ -125,14 +136,21 @@ export class PostingService {
    */
   async assertPostable(lines: readonly NormalizedJournalLine[], source: JournalSource): Promise<void> {
     const accountIds = lines.map((l) => l.accountId);
-    const [accounts, invalidDims] = await Promise.all([
+    const contactIds = [...new Set(lines.flatMap((l) => (l.contactId ? [l.contactId] : [])))];
+    const taxCodeIds = [...new Set(lines.flatMap((l) => (l.taxCodeId ? [l.taxCodeId] : [])))];
+    const [accounts, invalidDims, contacts, taxCodes] = await Promise.all([
       this.accounts.findPostingInfo(accountIds),
       this.dimensions.findInvalidDimensions(
         [...new Set(lines.flatMap((l) => (l.branchId ? [l.branchId] : [])))],
         [...new Set(lines.flatMap((l) => (l.costCenterId ? [l.costCenterId] : [])))],
       ),
+      this.parties.findContacts(contactIds),
+      this.parties.findTaxCodes(taxCodeIds),
     ]);
     const byId = new Map(accounts.map((a) => [a.id, a]));
+    const contactById = new Map(contacts.map((c) => [c.id, c]));
+    const taxCodeById = new Map(taxCodes.map((t) => [t.id, t]));
+    const history = SYSTEM_SOURCES.has(source);
 
     const missing: Array<{ field: string; errors: string[] }> = [];
     const notPostable: Array<{ line: number; account: string; reason: string }> = [];
@@ -150,6 +168,22 @@ export class PostingService {
       }
       if (line.costCenterId && invalidDims.costCenters.includes(line.costCenterId)) {
         missing.push({ field: `lines[${i}].costCenterId`, errors: ['cost center not found or inactive'] });
+      }
+
+      // Sub-ledgers: receivables name a customer, payables a supplier.
+      const contact = line.contactId ? contactById.get(line.contactId) : undefined;
+      if (line.contactId && (!contact || (!contact.isActive && !history))) {
+        missing.push({ field: `lines[${i}].contactId`, errors: ['contact not found or inactive'] });
+      }
+      if (account?.systemKey === SystemAccount.ACCOUNTS_RECEIVABLE && !(contact?.isCustomer)) {
+        notPostable.push({ line: i + 1, account: account.code, reason: 'receivable lines must name a customer' });
+      }
+      if (account?.systemKey === SystemAccount.ACCOUNTS_PAYABLE && !(contact?.isSupplier)) {
+        notPostable.push({ line: i + 1, account: account.code, reason: 'payable lines must name a supplier' });
+      }
+      const taxCode = line.taxCodeId ? taxCodeById.get(line.taxCodeId) : undefined;
+      if (line.taxCodeId && (!taxCode || (!taxCode.isActive && !history))) {
+        missing.push({ field: `lines[${i}].taxCodeId`, errors: ['tax code not found or inactive'] });
       }
     });
 

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { formatDateOnly } from '../../../common/helpers/date.js';
 import { Decimal } from '../../../common/helpers/money.js';
 import { TenantScopedRepository } from '../../../core/database/base.repository.js';
-import { Prisma, type JournalSource } from '../../../generated/prisma/client.js';
+import { Prisma, type JournalSource, type TaxRole } from '../../../generated/prisma/client.js';
 
 export interface LedgerRowInput {
   journalEntryId: string;
@@ -17,6 +17,10 @@ export interface LedgerRowInput {
   txnCredit: Decimal;
   branchId: string | null;
   costCenterId: string | null;
+  contactId: string | null;
+  taxCodeId: string | null;
+  taxRole: TaxRole | null;
+  taxBase: Decimal | null;
   description: string | null;
 }
 
@@ -81,6 +85,10 @@ export class LedgerRepository extends TenantScopedRepository {
         txnCredit: r.txnCredit.toFixed(4),
         branchId: r.branchId,
         costCenterId: r.costCenterId,
+        contactId: r.contactId,
+        taxCodeId: r.taxCodeId,
+        taxRole: r.taxRole,
+        taxBase: r.taxBase?.toFixed(4) ?? null,
         description: r.description,
       })),
     });

@@ -135,6 +135,10 @@ export class JournalService {
         description: l.description,
         branchId: l.branchId,
         costCenterId: l.costCenterId,
+        contactId: l.contactId,
+        taxCodeId: l.taxCodeId,
+        taxRole: l.taxRole,
+        taxBase: l.taxBase ? new Decimal(l.taxBase.toString()) : null,
       }));
       const reversal = await this.journals.createDraft(
         {

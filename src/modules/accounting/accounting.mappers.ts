@@ -15,6 +15,7 @@ export function toJournalSummary(entry: JournalEntry) {
     date: formatDateOnly(entry.date),
     status: entry.status,
     source: entry.source,
+    sourceType: entry.sourceType,
     sourceId: entry.sourceId,
     reference: entry.reference,
     memo: entry.memo,
@@ -47,6 +48,10 @@ export function toJournalDetail(entry: JournalEntryDetail) {
       credit: formatAmount(line.credit.toString(), entry.currency),
       branch: line.branch,
       costCenter: line.costCenter,
+      contact: line.contact,
+      taxCode: line.taxCode,
+      taxRole: line.taxRole,
+      taxBase: line.taxBase ? formatAmount(line.taxBase.toString(), entry.currency) : null,
     })),
   };
 }

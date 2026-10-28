@@ -57,6 +57,13 @@ model Tenant {
   ledgerEntries  LedgerEntry[]
   numberSeries   NumberSeries[]
 
+  // Master data
+  taxProfile CompanyTaxProfile?
+  contacts   Contact[]
+  items      Item[]
+  taxCodes   TaxCode[]
+  taxRates   TaxRate[]
+
   @@index([status])
   @@index([country])
   @@map("tenants")

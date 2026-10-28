@@ -1,5 +1,5 @@
 import { Decimal, sumMoney } from '../../../common/helpers/money.js';
-import type { NormalizedJournalLine } from '../journals/journal-rules.js';
+import { UNTAGGED, type NormalizedJournalLine } from '../journals/journal-rules.js';
 
 export interface IncomeStatementBalance {
   accountId: string;
@@ -41,6 +41,7 @@ export function buildClosingEntry(balances: readonly IncomeStatementBalance[], r
       description: memo,
       branchId: balance.branchId,
       costCenterId: balance.costCenterId,
+      ...UNTAGGED,
     });
     const key = `${balance.branchId ?? ''}|${balance.costCenterId ?? ''}`;
     const current = resultByDimension.get(key) ?? { branchId: balance.branchId, costCenterId: balance.costCenterId, net: ZERO };
@@ -58,6 +59,7 @@ export function buildClosingEntry(balances: readonly IncomeStatementBalance[], r
       description: memo,
       branchId,
       costCenterId,
+      ...UNTAGGED,
     });
   }
 

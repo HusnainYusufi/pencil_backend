@@ -54,6 +54,8 @@ export const ErrorCode = {
   YEAR_END_BLOCKED: 'YEAR_END_BLOCKED',
   /** Months close in order. */
   PERIOD_CLOSE_BLOCKED: 'PERIOD_CLOSE_BLOCKED',
+  /** Country tax codes follow the law: their rates are maintained by Pencil. */
+  TAX_CODE_PROTECTED: 'TAX_CODE_PROTECTED',
 
   // Reliability
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
@@ -105,6 +107,7 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, HttpStatus> = {
   BOOKS_LOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
   YEAR_END_BLOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
   PERIOD_CLOSE_BLOCKED: HttpStatus.UNPROCESSABLE_ENTITY,
+  TAX_CODE_PROTECTED: HttpStatus.UNPROCESSABLE_ENTITY,
 
   IDEMPOTENCY_KEY_REUSED: HttpStatus.UNPROCESSABLE_ENTITY,
   IDEMPOTENCY_IN_PROGRESS: HttpStatus.CONFLICT,

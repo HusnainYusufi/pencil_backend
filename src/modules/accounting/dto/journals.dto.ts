@@ -25,6 +25,9 @@ export class JournalLineDto {
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsUUID() costCenterId?: string;
+  /** Customer / supplier: required on receivable and payable accounts. */
+  @IsOptional() @IsUUID() contactId?: string;
+  @IsOptional() @IsUUID() taxCodeId?: string;
 }
 
 export class CreateJournalEntryDto {

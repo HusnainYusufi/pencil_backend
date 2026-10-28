@@ -19,11 +19,13 @@ export const Feature = {
   RECURRING_ENTRIES: 'accounting.recurring_entries',
   BUDGETS: 'accounting.budgets',
   FIXED_ASSETS: 'accounting.fixed_assets',
+  CONTACTS: 'accounting.contacts',
   // Reports
   LEDGER_REPORTS: 'reports.ledger',
   FINANCIAL_STATEMENTS: 'reports.financial_statements',
   CUSTOM_REPORTS: 'reports.custom',
   // Sales
+  ITEMS: 'sales.items',
   SALES_INVOICES: 'sales.invoices',
   QUOTATIONS: 'sales.quotes',
   RECURRING_INVOICES: 'sales.recurring',
@@ -36,6 +38,7 @@ export const Feature = {
   BANK_RECONCILIATION: 'banking.reconciliation',
   BANK_FEEDS: 'banking.feeds',
   // Tax
+  TAX_CODES: 'tax.codes',
   VAT_RETURNS: 'tax.vat_returns',
   EINVOICING: 'tax.einvoicing',
   // Inventory
@@ -75,6 +78,7 @@ const DEFINITIONS: Array<Omit<FeatureDefinition, 'type'> & { type?: FeatureType 
   { key: Feature.JOURNALS, module: 'ACCOUNTING', status: 'AVAILABLE', plans: ALL, name: 'Journal entries', description: 'Manual and opening-balance journals: draft, post, reverse' },
   { key: Feature.FISCAL_PERIODS, module: 'ACCOUNTING', status: 'AVAILABLE', plans: ALL, name: 'Fiscal periods & close', description: 'Fiscal years, monthly periods, period close and reopen' },
   { key: Feature.COST_CENTERS, module: 'ACCOUNTING', status: 'AVAILABLE', plans: PRO_UP, name: 'Cost centers', description: 'Analyse postings and reports by cost center' },
+  { key: Feature.CONTACTS, module: 'ACCOUNTING', status: 'AVAILABLE', plans: ALL, name: 'Customers & suppliers', description: 'Contacts with VAT / ID details, receivable and payable sub-ledgers' },
   { key: Feature.MULTI_CURRENCY, module: 'ACCOUNTING', status: 'COMING_SOON', plans: PRO_UP, name: 'Multi-currency', description: 'Foreign-currency transactions, rates and revaluation' },
   { key: Feature.RECURRING_ENTRIES, module: 'ACCOUNTING', status: 'COMING_SOON', plans: PRO_UP, name: 'Recurring entries', description: 'Scheduled journals for accruals, depreciation and payroll' },
   { key: Feature.BUDGETS, module: 'ACCOUNTING', status: 'COMING_SOON', plans: BUSINESS, name: 'Budgets', description: 'Budgets per account with variance reporting' },
@@ -84,6 +88,7 @@ const DEFINITIONS: Array<Omit<FeatureDefinition, 'type'> & { type?: FeatureType 
   { key: Feature.FINANCIAL_STATEMENTS, module: 'REPORTS', status: 'COMING_SOON', plans: ALL, name: 'Financial statements', description: 'Income statement, balance sheet and cash flow' },
   { key: Feature.CUSTOM_REPORTS, module: 'REPORTS', status: 'COMING_SOON', plans: BUSINESS, name: 'Custom reports', description: 'Saved, configurable report templates' },
   // ── Sales ────────────────────────────────────────────────────────────
+  { key: Feature.ITEMS, module: 'SALES', status: 'AVAILABLE', plans: ALL, name: 'Products & services', description: 'Item catalog with units, prices, default accounts and tax codes' },
   { key: Feature.SALES_INVOICES, module: 'SALES', status: 'COMING_SOON', plans: ALL, name: 'Sales invoices', description: 'Tax and simplified invoices, credit and debit notes, receipts' },
   { key: Feature.QUOTATIONS, module: 'SALES', status: 'COMING_SOON', plans: PRO_UP, name: 'Quotations', description: 'Quotes that convert into invoices' },
   { key: Feature.RECURRING_INVOICES, module: 'SALES', status: 'COMING_SOON', plans: PRO_UP, name: 'Recurring invoices', description: 'Subscription and contract billing on a schedule' },
@@ -96,6 +101,7 @@ const DEFINITIONS: Array<Omit<FeatureDefinition, 'type'> & { type?: FeatureType 
   { key: Feature.BANK_RECONCILIATION, module: 'BANKING', status: 'COMING_SOON', plans: PRO_UP, name: 'Bank reconciliation', description: 'Statement import and matching' },
   { key: Feature.BANK_FEEDS, module: 'BANKING', status: 'COMING_SOON', plans: BUSINESS, name: 'Live bank feeds', description: 'Automatic transactions via open banking' },
   // ── Tax ──────────────────────────────────────────────────────────────
+  { key: Feature.TAX_CODES, module: 'TAX', status: 'AVAILABLE', plans: ALL, name: 'Tax codes & rates', description: 'Country VAT / GST codes with effective-dated rates, return boxes and withholding tax' },
   { key: Feature.VAT_RETURNS, module: 'TAX', status: 'COMING_SOON', plans: ALL, name: 'VAT / sales-tax returns', description: 'ZATCA VAT and Jordan GST return preparation' },
   { key: Feature.EINVOICING, module: 'TAX', status: 'COMING_SOON', plans: ALL, name: 'E-invoicing', description: 'ZATCA Fatoora (Phase 2) and JoFotara clearance' },
   // ── Inventory ────────────────────────────────────────────────────────

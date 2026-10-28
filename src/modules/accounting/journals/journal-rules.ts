@@ -2,6 +2,7 @@ import { Decimal, minorUnits, sumMoney } from '../../../common/helpers/money.js'
 import { AppException } from '../../../core/errors/app.exception.js';
 import { ErrorCode } from '../../../core/errors/error-codes.js';
 import type { FieldError } from '../../../core/http/validation.js';
+import type { TaxRole } from '../../../generated/prisma/enums.js';
 
 export interface JournalLineInput {
   accountId: string;
@@ -10,6 +11,8 @@ export interface JournalLineInput {
   description?: string;
   branchId?: string;
   costCenterId?: string;
+  contactId?: string;
+  taxCodeId?: string;
 }
 
 export interface NormalizedJournalLine {
@@ -20,7 +23,17 @@ export interface NormalizedJournalLine {
   description: string | null;
   branchId: string | null;
   costCenterId: string | null;
+  /** Customer / supplier (required on receivable and payable lines). */
+  contactId: string | null;
+  taxCodeId: string | null;
+  /** BASE: the taxable amount; TAX: the tax itself (documents set these). */
+  taxRole: TaxRole | null;
+  /** On TAX lines: the taxable amount, in the entry currency. */
+  taxBase: Decimal | null;
 }
+
+/** Defaults for the tagging fields, for lines built in code. */
+export const UNTAGGED = { contactId: null, taxCodeId: null, taxRole: null, taxBase: null } as const;
 
 export interface NormalizedJournal {
   lines: NormalizedJournalLine[];
@@ -62,6 +75,10 @@ export function normalizeJournalLines(lines: readonly JournalLineInput[], curren
       description: line.description?.trim() || null,
       branchId: line.branchId ?? null,
       costCenterId: line.costCenterId ?? null,
+      contactId: line.contactId ?? null,
+      taxCodeId: line.taxCodeId ?? null,
+      taxRole: null,
+      taxBase: null,
     };
   });
 

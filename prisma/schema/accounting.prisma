@@ -53,6 +53,12 @@ enum FiscalStatus {
   CLOSED
 }
 
+/// Role of a line in tax reporting: the taxable amount, or the tax itself.
+enum TaxRole {
+  BASE
+  TAX
+}
+
 enum JournalStatus {
   DRAFT
   POSTED
@@ -90,11 +96,15 @@ model Account {
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parent        Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children      Account[]     @relation("AccountTree")
-  journalLines  JournalLine[]
-  ledgerEntries LedgerEntry[]
+  tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent                Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children              Account[]     @relation("AccountTree")
+  journalLines          JournalLine[]
+  ledgerEntries         LedgerEntry[]
+  salesItems            Item[]        @relation("ItemSalesAccount")
+  purchaseItems         Item[]        @relation("ItemPurchaseAccount")
+  taxCodes              TaxCode[]     @relation("TaxCodeAccount")
+  reverseChargeTaxCodes TaxCode[]     @relation("TaxCodeReverseCharge")
 
   @@unique([tenantId, code])
   @@unique([tenantId, systemKey])
@@ -194,6 +204,7 @@ model JournalEntry {
   status         JournalStatus @default(DRAFT)
   source         JournalSource @default(MANUAL)
   /// Originating document (invoice, payment, ...) for non-manual sources.
+  sourceType     String?       @map("source_type") @db.VarChar(30)
   sourceId       String?       @map("source_id") @db.Uuid
   reference      String?       @db.VarChar(100)
   memo           String?       @db.VarChar(1000)
@@ -226,18 +237,28 @@ model JournalEntry {
 
 /// Exactly one of debit / credit is positive (CHECK constraint).
 model JournalLine {
-  id             String  @id @default(uuid(7)) @db.Uuid
-  tenantId       String  @map("tenant_id") @db.Uuid
-  journalEntryId String  @map("journal_entry_id") @db.Uuid
-  lineNo         Int     @map("line_no")
-  accountId      String  @map("account_id") @db.Uuid
-  description    String? @db.VarChar(500)
-  debit          Decimal @default(0) @db.Decimal(20, 4)
-  credit         Decimal @default(0) @db.Decimal(20, 4)
-  branchId       String? @map("branch_id") @db.Uuid
-  costCenterId   String? @map("cost_center_id") @db.Uuid
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  journalEntryId String   @map("journal_entry_id") @db.Uuid
+  lineNo         Int      @map("line_no")
+  accountId      String   @map("account_id") @db.Uuid
+  description    String?  @db.VarChar(500)
+  debit          Decimal  @default(0) @db.Decimal(20, 4)
+  credit         Decimal  @default(0) @db.Decimal(20, 4)
+  branchId       String?  @map("branch_id") @db.Uuid
+  costCenterId   String?  @map("cost_center_id") @db.Uuid
+  /// Customer / supplier: required on receivable and payable lines.
+  contactId      String?  @map("contact_id") @db.Uuid
+  taxCodeId      String?  @map("tax_code_id") @db.Uuid
+  taxRole        TaxRole? @map("tax_role")
+  /// On TAX lines: the taxable amount the tax was computed on.
+  taxBase        Decimal? @map("tax_base") @db.Decimal(20, 4)
+  /// Line of the source document (invoice / bill line) this line came from.
+  sourceLineId   String?  @map("source_line_id") @db.Uuid
 
   tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact       Contact?      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  taxCode       TaxCode?      @relation(fields: [taxCodeId], references: [id], onDelete: Restrict)
   journalEntry  JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account       Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
   branch        Branch?       @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -268,10 +289,17 @@ model LedgerEntry {
   txnCredit      Decimal  @default(0) @map("txn_credit") @db.Decimal(20, 4)
   branchId       String?  @map("branch_id") @db.Uuid
   costCenterId   String?  @map("cost_center_id") @db.Uuid
+  contactId      String?  @map("contact_id") @db.Uuid
+  taxCodeId      String?  @map("tax_code_id") @db.Uuid
+  taxRole        TaxRole? @map("tax_role")
+  /// On TAX rows: the taxable amount in base currency.
+  taxBase        Decimal? @map("tax_base") @db.Decimal(20, 4)
   description    String?  @db.VarChar(500)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  taxCode      TaxCode?     @relation(fields: [taxCodeId], references: [id], onDelete: Restrict)
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   journalLine  JournalLine  @relation(fields: [journalLineId], references: [id], onDelete: Restrict)
   account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
@@ -282,6 +310,8 @@ model LedgerEntry {
   @@index([tenantId, accountId, date])
   @@index([tenantId, date])
   @@index([journalEntryId])
+  @@index([tenantId, contactId, date])
+  @@index([tenantId, taxCodeId, date])
   @@map("ledger_entries")
 }
 
