@@ -2,6 +2,7 @@ import type { PrismaClient } from '../src/generated/prisma/client.js';
 import { FEATURE_DEFINITIONS } from '../src/modules/entitlements/features.js';
 
 type PlanCode = 'starter' | 'professional' | 'business';
+type FeatureDefinition = (typeof FEATURE_DEFINITIONS)[number];
 
 /** [currency, monthly, yearly]: placeholder prices; manage real ones in pencil_admin. */
 export const PLAN_SEEDS: Array<{
@@ -53,13 +54,20 @@ const grant = (value: true | number | null) => ({ enabled: true, limitValue: val
  * Idempotent and safe on every release:
  *  - feature metadata (name, module, status, order) is synced from code;
  *  - a feature seen for the FIRST time is granted to the seeded plans per its
- *    catalog defaults; existing grants are never touched, so plan edits made in
+ *    catalog defaults, and a core feature (included in every seeded plan) also
+ *    to every custom plan, so a release never takes a capability away from a
+ *    company; existing grants are never touched, so plan edits made in
  *    pencil_admin always win;
  *  - plans are only created when missing.
+ *
+ * `definitions` is injectable for tests only.
  */
-export async function seedCatalog(prisma: PrismaClient): Promise<{ newFeatures: string[] }> {
-  const newFeatures: typeof FEATURE_DEFINITIONS[number][] = [];
-  for (const f of FEATURE_DEFINITIONS) {
+export async function seedCatalog(
+  prisma: PrismaClient,
+  definitions: ReadonlyArray<FeatureDefinition> = FEATURE_DEFINITIONS,
+): Promise<{ newFeatures: string[] }> {
+  const newFeatures: FeatureDefinition[] = [];
+  for (const f of definitions) {
     const meta = { name: f.name, description: f.description, module: f.module, status: f.status, sortOrder: f.sortOrder };
     const existing = await prisma.feature.findUnique({ where: { key: f.key }, select: { key: true } });
     if (existing) {
@@ -81,7 +89,7 @@ export async function seedCatalog(prisma: PrismaClient): Promise<{ newFeatures: 
         sortOrder: plan.sortOrder,
         features: {
           createMany: {
-            data: FEATURE_DEFINITIONS.flatMap((f) => {
+            data: definitions.flatMap((f) => {
               const value = f.plans[plan.code];
               return value === undefined ? [] : [{ featureKey: f.key, ...grant(value) }];
             }),
@@ -105,6 +113,20 @@ export async function seedCatalog(prisma: PrismaClient): Promise<{ newFeatures: 
       const plan = await prisma.plan.findUnique({ where: { code }, select: { id: true } });
       if (!plan) continue;
       await prisma.planFeature.createMany({ data: [{ planId: plan.id, featureKey: f.key, ...grant(value) }], skipDuplicates: true });
+    }
+  }
+
+  // ...and core ones into custom plans too. Limits are left out: a custom
+  // plan's limits are a commercial decision made in pencil_admin.
+  const seeded: string[] = PLAN_SEEDS.map((p) => p.code);
+  const core = newFeatures.filter((f) => PLAN_SEEDS.every((p) => f.plans[p.code] === true));
+  if (core.length > 0) {
+    const custom = await prisma.plan.findMany({ where: { code: { notIn: seeded } }, select: { id: true } });
+    for (const plan of custom) {
+      await prisma.planFeature.createMany({
+        data: core.map((f) => ({ planId: plan.id, featureKey: f.key, ...grant(true) })),
+        skipDuplicates: true,
+      });
     }
   }
   return { newFeatures: newFeatures.map((f) => f.key) };

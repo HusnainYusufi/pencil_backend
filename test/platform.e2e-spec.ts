@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { seedCatalog } from '../prisma/seed-catalog.js';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { EntitlementsService } from '../src/modules/entitlements/entitlements.service.js';
 import { Api, createTestApp, signup, TEST_PASSWORD, uniqueEmail } from './helpers.js';
+import { TEST_ENV } from './setup-env.js';
+
+const CORE_BACKFILL = 'prisma/migrations/20261027200000_custom_plan_core_features/migration.sql';
 
 describe('Platform admin API (e2e)', () => {
   let app: NestFastifyApplication;
@@ -167,6 +175,73 @@ describe('Platform admin API (e2e)', () => {
       expect((await api.get('/cost-centers', { token: owner.accessToken })).body.error.code).toBe('FEATURE_NOT_AVAILABLE');
       await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: 'professional' } });
       expect((await api.get('/cost-centers', { token: owner.accessToken })).status).toBe(200);
+    });
+  });
+
+  describe('custom plans keep the core features', () => {
+    let prisma: PrismaClient;
+    beforeAll(() => {
+      prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: TEST_ENV.DATABASE_MIGRATION_URL }) });
+    });
+    afterAll(async () => {
+      await prisma.$disconnect();
+    });
+
+    const createCustomPlan = async () => {
+      const res = await api.post('/platform/plans', {
+        token: admin,
+        body: {
+          code: `custom-${Date.now()}`,
+          name: 'Custom',
+          isPublic: false,
+          trialDays: 0,
+          features: [{ featureKey: 'limits.users', enabled: true, limitValue: null }],
+          prices: [{ currency: 'SAR', interval: 'YEARLY', amount: '1000.000' }],
+        },
+      });
+      expect(res.status).toBe(201);
+      return res.body as { id: string; code: string };
+    };
+
+    it('the catalog backfill gives a custom plan its accounting back', async () => {
+      const owner = await signup(api);
+      const plan = await createCustomPlan();
+      await api.put(`/platform/tenants/${owner.tenantId}/subscription`, { token: admin, body: { planCode: plan.code } });
+      // A custom plan made before the catalog: no accounting at all.
+      expect((await api.get('/journal-entries', { token: owner.accessToken })).body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+
+      await prisma.$executeRawUnsafe(readFileSync(CORE_BACKFILL, 'utf8'));
+      app.get(EntitlementsService).invalidate(owner.tenantId);
+
+      expect((await api.get('/journal-entries', { token: owner.accessToken })).status).toBe(200);
+      expect((await api.get('/accounts', { token: owner.accessToken })).status).toBe(200);
+      // Tiered features and pre-catalog choices are not granted.
+      expect((await api.get('/cost-centers', { token: owner.accessToken })).body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+      const keys = (await prisma.planFeature.findMany({ where: { planId: plan.id } })).map((g) => g.featureKey);
+      expect(keys).not.toContain('tax.einvoicing');
+    });
+
+    it('the catalog seed grants a newly introduced core feature to custom plans, but not limits or tiered ones', async () => {
+      const plan = await createCustomPlan();
+      const stamp = Date.now();
+      const base = { module: 'ACCOUNTING', status: 'COMING_SOON', type: 'BOOLEAN', description: 'Test feature', sortOrder: 9_999 } as const;
+      const definitions = [
+        { ...base, key: `test.core_${stamp}`, name: 'Core', plans: { starter: true, professional: true, business: true } },
+        { ...base, key: `test.pro_${stamp}`, name: 'Pro', plans: { professional: true, business: true } },
+        { ...base, key: `test.limit_${stamp}`, name: 'Limit', type: 'LIMIT', plans: { starter: 5, professional: 10, business: null } },
+      ] as unknown as NonNullable<Parameters<typeof seedCatalog>[1]>;
+      const keys = definitions.map((d) => d.key);
+      try {
+        expect((await seedCatalog(prisma, definitions)).newFeatures).toEqual(keys);
+        const granted = await prisma.planFeature.findMany({ where: { planId: plan.id, featureKey: { in: keys } } });
+        expect(granted).toEqual([expect.objectContaining({ featureKey: `test.core_${stamp}`, enabled: true, limitValue: null })]);
+        // Seen once: a second run neither re-introduces nor re-grants.
+        await prisma.planFeature.deleteMany({ where: { planId: plan.id, featureKey: { in: keys } } });
+        expect((await seedCatalog(prisma, definitions)).newFeatures).toEqual([]);
+        expect(await prisma.planFeature.count({ where: { planId: plan.id, featureKey: { in: keys } } })).toBe(0);
+      } finally {
+        await prisma.feature.deleteMany({ where: { key: { in: keys } } });
+      }
     });
   });
 
