@@ -16,8 +16,8 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
 
   try {
-    await seedCatalog(prisma);
-    console.log('✔ feature catalog & plans');
+    const { newFeatures } = await seedCatalog(prisma);
+    console.log(`✔ feature catalog & plans${newFeatures.length ? ` (+${newFeatures.length} new features granted to plans)` : ''}`);
 
     const email = process.env.SEED_PLATFORM_ADMIN_EMAIL;
     const password = process.env.SEED_PLATFORM_ADMIN_PASSWORD;

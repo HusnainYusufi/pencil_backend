@@ -8,6 +8,25 @@ enum PlatformAdminRole {
   BILLING
 }
 
+/// Product area a feature belongs to (drives grouping in plans and navigation).
+enum FeatureModule {
+  ACCOUNTING
+  SALES
+  PURCHASES
+  BANKING
+  TAX
+  INVENTORY
+  REPORTS
+  PLATFORM
+}
+
+/// Lifecycle: plans may already include COMING_SOON features (sold as roadmap).
+enum FeatureStatus {
+  AVAILABLE
+  BETA
+  COMING_SOON
+}
+
 enum FeatureType {
   /// On/off capability, e.g. `einvoicing.zatca`.
   BOOLEAN
@@ -68,12 +87,15 @@ model PlatformSession {
 
 model Feature {
   /// Stable machine key, e.g. `einvoicing.zatca`, `users.max`.
-  key         String      @id @db.VarChar(100)
-  name        String      @db.VarChar(150)
-  description String?     @db.VarChar(500)
+  key         String        @id @db.VarChar(100)
+  name        String        @db.VarChar(150)
+  description String?       @db.VarChar(500)
   type        FeatureType
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  module      FeatureModule @default(PLATFORM)
+  status      FeatureStatus @default(AVAILABLE)
+  sortOrder   Int           @default(0) @map("sort_order")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   planFeatures PlanFeature[]
   overrides    TenantFeatureOverride[]

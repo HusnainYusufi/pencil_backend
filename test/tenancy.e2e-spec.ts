@@ -88,7 +88,7 @@ describe('Tenant isolation & access control (e2e)', () => {
         body: { name: 'Cashier', permissions: ['invoices.read'] },
       });
       expect(createRole.status).toBe(403);
-      expect(createRole.body.error).toMatchObject({ code: 'FEATURE_NOT_AVAILABLE', details: { feature: 'roles.custom' } });
+      expect(createRole.body.error).toMatchObject({ code: 'FEATURE_NOT_AVAILABLE', details: { feature: 'platform.custom_roles' } });
 
       const audit = await api.get('/audit-logs', { token: tenantA.accessToken });
       expect(audit.body.error.code).toBe('FEATURE_NOT_AVAILABLE');

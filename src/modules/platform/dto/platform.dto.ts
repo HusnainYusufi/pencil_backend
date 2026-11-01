@@ -21,6 +21,8 @@ import { SearchPageQueryDto } from '../../../common/dto/pagination.dto.js';
 import {
   BillingInterval,
   CountryCode,
+  FeatureModule,
+  FeatureStatus,
   FeatureType,
   SubscriptionStatus,
   TenantStatus,
@@ -76,6 +78,8 @@ export class CreateFeatureDto {
   @IsString() @Length(2, 150) name: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsIn(Object.values(FeatureType)) type: FeatureType;
+  @IsOptional() @IsIn(Object.values(FeatureModule)) module?: FeatureModule;
+  @IsOptional() @IsIn(Object.values(FeatureStatus)) status?: FeatureStatus;
 }
 
 export class UpdateFeatureDto extends PartialType(OmitType(CreateFeatureDto, ['key', 'type'] as const)) {}

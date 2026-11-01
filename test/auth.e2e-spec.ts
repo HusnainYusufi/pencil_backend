@@ -71,8 +71,8 @@ describe('Auth (e2e)', () => {
       expect(res.status).toBe(200);
       expect(res.body.permissions).toEqual(['*']);
       expect(res.body.plan).toBe('starter');
-      expect(res.body.entitlements['einvoicing']).toEqual({ enabled: true, limit: null });
-      expect(res.body.entitlements['users.max']).toEqual({ enabled: true, limit: 3 });
+      expect(res.body.entitlements['tax.einvoicing']).toEqual({ enabled: true, limit: null });
+      expect(res.body.entitlements['limits.users']).toEqual({ enabled: true, limit: 3 });
     });
   });
 

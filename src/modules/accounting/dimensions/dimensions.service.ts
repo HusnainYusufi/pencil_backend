@@ -30,7 +30,7 @@ export class DimensionsService {
     return this.db.transaction(async () => {
       await this.entitlements.assertWithinLimit(
         this.ctx.requireTenantId(),
-        Feature.BRANCHES_MAX,
+        Feature.BRANCHES_LIMIT,
         await this.dimensions.countActiveBranches(),
       );
       const branch = await this.dimensions.createBranch(dto).catch(this.duplicateCode(dto.code));
@@ -51,7 +51,7 @@ export class DimensionsService {
       if (dto.isActive === true && !branch.isActive) {
         await this.entitlements.assertWithinLimit(
           this.ctx.requireTenantId(),
-          Feature.BRANCHES_MAX,
+          Feature.BRANCHES_LIMIT,
           await this.dimensions.countActiveBranches(),
         );
       }
