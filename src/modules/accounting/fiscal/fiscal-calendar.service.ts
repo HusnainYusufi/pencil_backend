@@ -7,6 +7,7 @@ import { ErrorCode } from '../../../core/errors/error-codes.js';
 import type { FiscalPeriod } from '../../../generated/prisma/client.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { AccountingContext } from '../accounting-context.service.js';
+import { BooksRepository } from '../repositories/books.repository.js';
 import {
   FiscalRepository,
   type FiscalPeriodWithYear,
@@ -21,6 +22,7 @@ export class FiscalCalendarService {
     private readonly ctx: RequestContext,
     private readonly fiscal: FiscalRepository,
     private readonly accounting: AccountingContext,
+    private readonly books: BooksRepository,
     private readonly audit: AuditService,
   ) {}
 
@@ -41,12 +43,20 @@ export class FiscalCalendarService {
     });
   }
 
+  /** Creates the fiscal year following `year` unless it already exists. */
+  async ensureYearAfter(year: { startDate: Date; endDate: Date }): Promise<void> {
+    const next = nextFiscalYear({ start: year.startDate, end: year.endDate });
+    if (!(await this.fiscal.findYearStarting(next.start))) await this.createYear(next);
+  }
+
   /**
-   * The open period a posting dated `date` belongs to. Posting into the
-   * year right after the latest one opens that year automatically, so
-   * January's first invoice never fails on a missing calendar.
+   * The open period a posting dated `date` belongs to, share-locked until the
+   * posting commits (a concurrent close waits). Posting into the year right
+   * after the latest one opens that year automatically, so January's first
+   * invoice never fails on a missing calendar. Year-end closing entries
+   * (`closing`) may land in a closed month of a still-open year.
    */
-  async resolveOpenPeriod(date: Date): Promise<FiscalPeriodWithYear> {
+  async resolveOpenPeriod(date: Date, options: { closing?: boolean } = {}): Promise<FiscalPeriodWithYear> {
     let period = await this.fiscal.findPeriodForDate(date);
     if (!period) {
       const latest = await this.fiscal.latestYear();
@@ -65,7 +75,10 @@ export class FiscalCalendarService {
         { date: formatDateOnly(date) },
       );
     }
-    if (period.status === 'CLOSED' || period.fiscalYear.status === 'CLOSED') {
+    const locked = this.db.inTransaction ? await this.fiscal.lockPeriodForPosting(period.id) : null;
+    const periodStatus = locked?.periodStatus ?? period.status;
+    const yearStatus = locked?.yearStatus ?? period.fiscalYear.status;
+    if ((periodStatus === 'CLOSED' && !options.closing) || yearStatus === 'CLOSED') {
       throw new AppException(
         ErrorCode.FISCAL_PERIOD_CLOSED,
         `The period ${formatDateOnly(period.startDate)}..${formatDateOnly(period.endDate)} is closed`,
@@ -75,28 +88,56 @@ export class FiscalCalendarService {
     return period;
   }
 
+  /** Months close in order: an earlier open month would otherwise still change. */
   async closePeriod(id: string): Promise<FiscalPeriod> {
-    return this.setStatus(id, 'CLOSED');
-  }
-
-  async reopenPeriod(id: string): Promise<FiscalPeriod> {
-    return this.setStatus(id, 'OPEN');
-  }
-
-  private async setStatus(id: string, status: 'OPEN' | 'CLOSED'): Promise<FiscalPeriod> {
     return this.db.transaction(async () => {
       const period = await this.fiscal.findPeriodById(id);
       if (!period) throw AppException.notFound('Fiscal period', id);
-      if (status === 'OPEN' && period.fiscalYear.status === 'CLOSED') {
-        throw new AppException(ErrorCode.FISCAL_PERIOD_CLOSED, `Fiscal year ${period.fiscalYear.name} is closed`);
+      if (period.status === 'CLOSED') return period;
+      const year = await this.fiscal.findYearById(period.fiscalYearId);
+      const earlierOpen = year?.periods.find((p) => p.number < period.number && p.status === 'OPEN');
+      if (earlierOpen) {
+        throw new AppException(ErrorCode.PERIOD_CLOSE_BLOCKED, `Close ${formatDateOnly(earlierOpen.startDate)}..${formatDateOnly(earlierOpen.endDate)} first`, {
+          openPeriodId: earlierOpen.id,
+          period: earlierOpen.number,
+        });
       }
-      if (period.status === status) return period;
-      const updated = await this.fiscal.setPeriodStatus(id, status, this.ctx.requireUser().userId);
+      const updated = await this.fiscal.setPeriodStatus(id, 'CLOSED', this.ctx.requireUser().userId);
       await this.audit.record({
-        action: status === 'CLOSED' ? 'fiscal_period.closed' : 'fiscal_period.reopened',
+        action: 'fiscal_period.closed',
         entityType: 'fiscal_period',
         entityId: id,
         metadata: { fiscalYear: period.fiscalYear.name, period: period.number },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * Reopening a month changes figures people may have relied on: it needs a
+   * reason (audit log), an open year, and must not reach behind a lock date.
+   */
+  async reopenPeriod(id: string, reason: string): Promise<FiscalPeriod> {
+    return this.db.transaction(async () => {
+      const period = await this.fiscal.findPeriodById(id);
+      if (!period) throw AppException.notFound('Fiscal period', id);
+      if (period.fiscalYear.status === 'CLOSED') {
+        throw new AppException(ErrorCode.FISCAL_PERIOD_CLOSED, `Fiscal year ${period.fiscalYear.name} is closed; reopen the year first`);
+      }
+      if (period.status === 'OPEN') return period;
+      const { lockDate, taxLockDate } = await this.books.get();
+      const lockedThrough = [lockDate, taxLockDate].filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime())[0];
+      if (lockedThrough && period.startDate <= lockedThrough) {
+        throw new AppException(ErrorCode.BOOKS_LOCKED, `The books are locked through ${formatDateOnly(lockedThrough)}`, {
+          lockedThrough: formatDateOnly(lockedThrough),
+        });
+      }
+      const updated = await this.fiscal.setPeriodStatus(id, 'OPEN', this.ctx.requireUser().userId);
+      await this.audit.record({
+        action: 'fiscal_period.reopened',
+        entityType: 'fiscal_period',
+        entityId: id,
+        metadata: { fiscalYear: period.fiscalYear.name, period: period.number, reason },
       });
       return updated;
     });

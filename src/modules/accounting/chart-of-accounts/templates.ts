@@ -22,6 +22,14 @@ interface CountryTerms {
   incomeLevyPayableEn: string;
   incomeLevyPayableAr: string;
   governmentFeesAr: string;
+  socialInsurancePayableEn: string;
+  socialInsurancePayableAr: string;
+  withholdingAr: string;
+  /** Second profit levy: income tax on the foreign share (KSA) / national contribution (JO). */
+  secondLevyEn: string;
+  secondLevyAr: string;
+  secondLevyPayableEn: string;
+  secondLevyPayableAr: string;
 }
 
 const TERMS: Record<CountryCode, CountryTerms> = {
@@ -36,6 +44,13 @@ const TERMS: Record<CountryCode, CountryTerms> = {
     incomeLevyPayableEn: 'Zakat payable',
     incomeLevyPayableAr: 'الزكاة المستحقة',
     governmentFeesAr: 'الرسوم الحكومية',
+    socialInsurancePayableEn: 'GOSI payable',
+    socialInsurancePayableAr: 'التأمينات الاجتماعية المستحقة',
+    withholdingAr: 'ضريبة الاستقطاع المستحقة',
+    secondLevyEn: 'Income tax',
+    secondLevyAr: 'ضريبة الدخل',
+    secondLevyPayableEn: 'Income tax payable',
+    secondLevyPayableAr: 'ضريبة الدخل المستحقة',
   },
   JO: {
     taxEn: 'Sales tax',
@@ -48,6 +63,13 @@ const TERMS: Record<CountryCode, CountryTerms> = {
     incomeLevyPayableEn: 'Income tax payable',
     incomeLevyPayableAr: 'ضريبة الدخل المستحقة',
     governmentFeesAr: 'رسوم ورخص حكومية',
+    socialInsurancePayableEn: 'Social security payable',
+    socialInsurancePayableAr: 'اشتراكات الضمان الاجتماعي المستحقة',
+    withholdingAr: 'ضريبة الدخل المقتطعة المستحقة',
+    secondLevyEn: 'National contribution',
+    secondLevyAr: 'المساهمة الوطنية',
+    secondLevyPayableEn: 'National contribution payable',
+    secondLevyPayableAr: 'المساهمة الوطنية المستحقة',
   },
 };
 
@@ -55,9 +77,13 @@ const TERMS: Record<CountryCode, CountryTerms> = {
  * Default chart of accounts for a new company: a practical SME chart that
  * follows the IFRS-for-SMEs statement structure used in both countries.
  * Codes: 1 assets, 2 liabilities, 3 equity, 4 revenue, 5 expenses.
+ * Existing companies receive accounts added here through `syncChartTemplate`
+ * (codes are never reused for something else).
  */
 export function chartOfAccountsTemplate(country: CountryCode): AccountTemplate[] {
   const t = TERMS[country];
+  const jordan = country === 'JO';
+  const only = (condition: boolean, ...items: AccountTemplate[]) => (condition ? items : []);
   return [
     { code: '1', name: 'Assets', nameAr: 'الأصول', subtype: 'OTHER_CURRENT_ASSET', isGroup: true },
     { code: '11', name: 'Current assets', nameAr: 'الأصول المتداولة', subtype: 'OTHER_CURRENT_ASSET', isGroup: true, parent: '1' },
@@ -68,6 +94,13 @@ export function chartOfAccountsTemplate(country: CountryCode): AccountTemplate[]
     { code: '1105', name: 'Prepaid expenses', nameAr: 'مصروفات مدفوعة مقدماً', subtype: 'OTHER_CURRENT_ASSET', parent: '11' },
     { code: '1106', name: 'Employee advances', nameAr: 'سلف الموظفين', subtype: 'OTHER_CURRENT_ASSET', parent: '11' },
     { code: '1107', name: `${t.taxEn} input`, nameAr: `${t.taxAr} - المدخلات`, subtype: 'TAX_RECEIVABLE', parent: '11', systemKey: SystemAccount.VAT_INPUT },
+    { code: '1108', name: 'Petty cash', nameAr: 'العهدة النقدية', subtype: 'CASH', parent: '11' },
+    { code: '1109', name: 'Allowance for expected credit losses', nameAr: 'مخصص الخسائر الائتمانية المتوقعة', subtype: 'ALLOWANCE_FOR_CREDIT_LOSSES', parent: '11' },
+    ...only(
+      jordan,
+      { code: '1110', name: 'Cheques under collection', nameAr: 'شيكات برسم التحصيل', subtype: 'OTHER_CURRENT_ASSET', parent: '11' },
+      { code: '1111', name: 'Income tax advance payments', nameAr: 'دفعات مقدمة على حساب ضريبة الدخل', subtype: 'TAX_RECEIVABLE', parent: '11' },
+    ),
     { code: '12', name: 'Non-current assets', nameAr: 'الأصول غير المتداولة', subtype: 'OTHER_NON_CURRENT_ASSET', isGroup: true, parent: '1' },
     { code: '1201', name: 'Property, plant and equipment', nameAr: 'الممتلكات والآلات والمعدات', subtype: 'FIXED_ASSET', parent: '12' },
     { code: '1202', name: 'Accumulated depreciation', nameAr: 'مجمع الإهلاك', subtype: 'ACCUMULATED_DEPRECIATION', parent: '12', systemKey: SystemAccount.ACCUMULATED_DEPRECIATION },
@@ -83,9 +116,16 @@ export function chartOfAccountsTemplate(country: CountryCode): AccountTemplate[]
     { code: '2106', name: 'Unearned revenue', nameAr: 'إيرادات مؤجلة', subtype: 'OTHER_CURRENT_LIABILITY', parent: '21', systemKey: SystemAccount.UNEARNED_REVENUE },
     { code: '2107', name: 'Customer advances', nameAr: 'دفعات مقدمة من العملاء', subtype: 'OTHER_CURRENT_LIABILITY', parent: '21', systemKey: SystemAccount.CUSTOMER_ADVANCES },
     { code: '2108', name: t.incomeLevyPayableEn, nameAr: t.incomeLevyPayableAr, subtype: 'TAX_PAYABLE', parent: '21' },
+    { code: '2109', name: t.socialInsurancePayableEn, nameAr: t.socialInsurancePayableAr, subtype: 'OTHER_CURRENT_LIABILITY', parent: '21' },
+    { code: '2110', name: 'Withholding tax payable', nameAr: t.withholdingAr, subtype: 'TAX_PAYABLE', parent: '21', systemKey: SystemAccount.WITHHOLDING_TAX_PAYABLE },
+    { code: '2111', name: 'Short-term loans and current portion of long-term loans', nameAr: 'قروض قصيرة الأجل والجزء المتداول من القروض طويلة الأجل', subtype: 'CURRENT_BORROWINGS', parent: '21' },
+    { code: '2112', name: 'Dividends payable', nameAr: 'توزيعات أرباح مستحقة', subtype: 'OTHER_CURRENT_LIABILITY', parent: '21' },
+    { code: '2113', name: t.secondLevyPayableEn, nameAr: t.secondLevyPayableAr, subtype: 'TAX_PAYABLE', parent: '21' },
+    ...only(jordan, { code: '2114', name: 'Post-dated cheques payable', nameAr: 'شيكات آجلة الدفع', subtype: 'OTHER_CURRENT_LIABILITY', parent: '21' }),
     { code: '22', name: 'Non-current liabilities', nameAr: 'الخصوم غير المتداولة', subtype: 'NON_CURRENT_LIABILITY', isGroup: true, parent: '2' },
     { code: '2201', name: 'End-of-service benefits', nameAr: 'مخصص مكافأة نهاية الخدمة', subtype: 'NON_CURRENT_LIABILITY', parent: '22' },
     { code: '2202', name: 'Long-term loans', nameAr: 'قروض طويلة الأجل', subtype: 'NON_CURRENT_LIABILITY', parent: '22' },
+    ...only(jordan, { code: '2203', name: 'Deferred tax liability', nameAr: 'مطلوبات ضريبية مؤجلة', subtype: 'NON_CURRENT_LIABILITY', parent: '22' }),
 
     { code: '3', name: 'Equity', nameAr: 'حقوق الملكية', subtype: 'EQUITY', isGroup: true },
     { code: '3101', name: 'Capital', nameAr: 'رأس المال', subtype: 'EQUITY', parent: '3' },
@@ -93,6 +133,7 @@ export function chartOfAccountsTemplate(country: CountryCode): AccountTemplate[]
     { code: '3103', name: 'Retained earnings', nameAr: 'الأرباح المبقاة', subtype: 'RETAINED_EARNINGS', parent: '3', systemKey: SystemAccount.RETAINED_EARNINGS },
     { code: '3104', name: "Owner's drawings", nameAr: 'المسحوبات الشخصية', subtype: 'EQUITY', parent: '3' },
     { code: '3105', name: 'Opening balance equity', nameAr: 'أرصدة افتتاحية', subtype: 'EQUITY', parent: '3', systemKey: SystemAccount.OPENING_BALANCE_EQUITY },
+    { code: '3106', name: "Partners' current accounts", nameAr: 'جاري الشركاء', subtype: 'EQUITY', parent: '3' },
 
     { code: '4', name: 'Revenue', nameAr: 'الإيرادات', subtype: 'OPERATING_REVENUE', isGroup: true },
     { code: '41', name: 'Operating revenue', nameAr: 'الإيرادات التشغيلية', subtype: 'OPERATING_REVENUE', isGroup: true, parent: '4' },
@@ -120,10 +161,14 @@ export function chartOfAccountsTemplate(country: CountryCode): AccountTemplate[]
     { code: '5211', name: 'Travel and transportation', nameAr: 'السفر والتنقلات', subtype: 'OPERATING_EXPENSE', parent: '52' },
     { code: '5212', name: 'Depreciation', nameAr: 'مصروف الإهلاك', subtype: 'OPERATING_EXPENSE', parent: '52', systemKey: SystemAccount.DEPRECIATION_EXPENSE },
     { code: '5213', name: 'Bank charges', nameAr: 'الرسوم البنكية', subtype: 'OPERATING_EXPENSE', parent: '52', systemKey: SystemAccount.BANK_CHARGES },
+    { code: '5214', name: 'Expected credit losses', nameAr: 'مصروف الخسائر الائتمانية المتوقعة', subtype: 'OPERATING_EXPENSE', parent: '52' },
+    { code: '5215', name: 'End-of-service benefits', nameAr: 'مصروف مكافأة نهاية الخدمة', subtype: 'OPERATING_EXPENSE', parent: '52' },
     { code: '53', name: 'Other expenses', nameAr: 'مصروفات أخرى', subtype: 'OTHER_EXPENSE', isGroup: true, parent: '5' },
     { code: '5301', name: 'Foreign exchange loss', nameAr: 'خسائر فروقات العملة', subtype: 'OTHER_EXPENSE', parent: '53', systemKey: SystemAccount.FX_LOSS },
     { code: '5302', name: 'Rounding differences', nameAr: 'فروقات التقريب', subtype: 'OTHER_EXPENSE', parent: '53', systemKey: SystemAccount.ROUNDING },
-    { code: '5303', name: t.incomeLevyEn, nameAr: t.incomeLevyAr, subtype: 'OTHER_EXPENSE', parent: '53' },
+    { code: '5303', name: t.incomeLevyEn, nameAr: t.incomeLevyAr, subtype: 'ZAKAT_AND_INCOME_TAX', parent: '53' },
+    { code: '5304', name: 'Finance costs', nameAr: 'تكاليف التمويل', subtype: 'FINANCE_COST', parent: '53' },
+    { code: '5305', name: t.secondLevyEn, nameAr: t.secondLevyAr, subtype: 'ZAKAT_AND_INCOME_TAX', parent: '53' },
   ];
 }
 

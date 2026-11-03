@@ -28,6 +28,12 @@ model Tenant {
   commercialRegistration String?      @map("commercial_registration") @db.VarChar(32)
   /// Month (1-12) in which the fiscal year starts.
   fiscalYearStartMonth   Int          @default(1) @map("fiscal_year_start_month")
+  /// Books are locked through this date: nothing may be posted on or before it.
+  lockDate               DateTime?    @map("lock_date") @db.Date
+  /// Set when a VAT / GST return is filed; enforced like the lock date.
+  taxLockDate            DateTime?    @map("tax_lock_date") @db.Date
+  /// Cut-over date: opening balances are dated here and nothing is posted before it.
+  openingBalanceDate     DateTime?    @map("opening_balance_date") @db.Date
   status                 TenantStatus @default(ACTIVE)
   suspendedAt            DateTime?    @map("suspended_at") @db.Timestamptz(3)
   suspensionReason       String?      @map("suspension_reason") @db.VarChar(500)

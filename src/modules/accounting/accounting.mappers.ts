@@ -69,6 +69,8 @@ export function toFiscalYear(year: FiscalYearWithPeriods) {
     startDate: formatDateOnly(year.startDate),
     endDate: formatDateOnly(year.endDate),
     status: year.status,
+    closedAt: year.closedAt,
+    closingEntryId: year.closingEntryId,
     periods: year.periods.map(toFiscalPeriod),
   };
 }

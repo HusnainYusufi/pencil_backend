@@ -32,4 +32,6 @@ export class UpdateAccountDto {
   /** `null` moves the account to the top level. */
   @IsOptional() @ValidateIf((_o, v) => v !== null) @IsUUID() parentId?: string | null;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  /** Control accounts accept no manual journals (changing it needs books.close). */
+  @IsOptional() @IsBoolean() allowManualPosting?: boolean;
 }

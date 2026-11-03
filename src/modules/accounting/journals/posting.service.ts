@@ -4,8 +4,10 @@ import { RequestContext } from '../../../core/context/request-context.service.js
 import { Db } from '../../../core/database/db.service.js';
 import { AppException } from '../../../core/errors/app.exception.js';
 import { ErrorCode } from '../../../core/errors/error-codes.js';
+import type { JournalSource } from '../../../generated/prisma/client.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { AccountingContext } from '../accounting-context.service.js';
+import { BooksService } from '../fiscal/books.service.js';
 import { FiscalCalendarService } from '../fiscal/fiscal-calendar.service.js';
 import { AccountsRepository } from '../repositories/accounts.repository.js';
 import { DimensionsRepository } from '../repositories/dimensions.repository.js';
@@ -16,16 +18,22 @@ import type { NormalizedJournalLine } from './journal-rules.js';
 
 export const JOURNAL_NUMBER_PREFIX = 'JV';
 
+/** `year` is the calendar year in which the entry's fiscal year starts. */
 export const formatJournalNumber = (year: number, sequence: number): string =>
   `${JOURNAL_NUMBER_PREFIX}-${year}-${String(sequence).padStart(6, '0')}`;
+
+/** Sources that must always be able to undo history (inactive accounts, closed months). */
+const SYSTEM_SOURCES: ReadonlySet<JournalSource> = new Set(['REVERSAL', 'CLOSING']);
 
 /**
  * The only way anything reaches the general ledger. Manual journals today;
  * invoices, payments and bank transactions will call the same engine.
  *
- * In one transaction: re-validate lines -> resolve the open fiscal period ->
- * take the next gapless number -> flip DRAFT to POSTED (compare-and-set) ->
- * write ledger rows. The database re-checks balance and postability at commit.
+ * In one transaction: lock the voucher -> re-validate lines, lock dates and
+ * control accounts -> resolve and share-lock the open fiscal period -> take
+ * the next gapless number of the fiscal year -> flip DRAFT to POSTED
+ * (compare-and-set) -> write ledger rows. Database triggers re-check all of it
+ * (period, lock dates, accounts, immutability) and the balance at commit.
  */
 @Injectable()
 export class PostingService {
@@ -34,6 +42,7 @@ export class PostingService {
     private readonly ctx: RequestContext,
     private readonly accounting: AccountingContext,
     private readonly fiscal: FiscalCalendarService,
+    private readonly books: BooksService,
     private readonly journals: JournalsRepository,
     private readonly ledger: LedgerRepository,
     private readonly numbers: NumberSeriesRepository,
@@ -44,6 +53,7 @@ export class PostingService {
 
   async postDraft(entryId: string): Promise<void> {
     await this.db.transaction(async () => {
+      await this.journals.lockForPosting(entryId);
       const entry = await this.journals.findDetail(entryId);
       if (!entry) throw AppException.notFound('Journal entry', entryId);
       if (entry.status !== 'DRAFT') {
@@ -59,10 +69,11 @@ export class PostingService {
         branchId: l.branchId,
         costCenterId: l.costCenterId,
       }));
-      await this.assertPostable(lines);
+      await this.assertPostable(lines, entry.source);
+      await this.books.assertPostingAllowed(entry.date, entry.source);
 
-      const period = await this.fiscal.resolveOpenPeriod(entry.date);
-      const year = entry.date.getUTCFullYear();
+      const period = await this.fiscal.resolveOpenPeriod(entry.date, { closing: entry.source === 'CLOSING' });
+      const year = period.fiscalYear.startDate.getUTCFullYear();
       const number = formatJournalNumber(year, await this.numbers.next(JOURNAL_NUMBER_PREFIX, year));
 
       const posted = await this.journals.markPosted(entry.id, {
@@ -101,16 +112,18 @@ export class PostingService {
         action: 'journal.posted',
         entityType: 'journal_entry',
         entityId: entry.id,
-        metadata: { number, date: entry.date.toISOString().slice(0, 10), total: entry.totalAmount.toString() },
+        metadata: { number, source: entry.source, date: entry.date.toISOString().slice(0, 10), total: entry.totalAmount.toString() },
       });
     });
   }
 
   /**
-   * Accounts must belong to this tenant, be postable (not a group) and
-   * active; dimensions must exist and be active. Errors point at the line.
+   * Accounts must belong to this tenant and be postable (not a group); active
+   * unless a reversal or closing entry is undoing history; and control
+   * accounts (receivables, payables, VAT) take no manual journals.
+   * Dimensions must exist and be active. Errors point at the line.
    */
-  async assertPostable(lines: readonly NormalizedJournalLine[]): Promise<void> {
+  async assertPostable(lines: readonly NormalizedJournalLine[], source: JournalSource): Promise<void> {
     const accountIds = lines.map((l) => l.accountId);
     const [accounts, invalidDims] = await Promise.all([
       this.accounts.findPostingInfo(accountIds),
@@ -127,7 +140,11 @@ export class PostingService {
       const account = byId.get(line.accountId);
       if (!account) missing.push({ field: `lines[${i}].accountId`, errors: ['account not found'] });
       else if (account.isGroup) notPostable.push({ line: i + 1, account: account.code, reason: 'group account' });
-      else if (!account.isActive) notPostable.push({ line: i + 1, account: account.code, reason: 'inactive account' });
+      else if (!account.isActive && !SYSTEM_SOURCES.has(source)) {
+        notPostable.push({ line: i + 1, account: account.code, reason: 'inactive account' });
+      } else if (!account.allowManualPosting && source === 'MANUAL') {
+        notPostable.push({ line: i + 1, account: account.code, reason: 'control account: posted only from documents' });
+      }
       if (line.branchId && invalidDims.branches.includes(line.branchId)) {
         missing.push({ field: `lines[${i}].branchId`, errors: ['branch not found or inactive'] });
       }

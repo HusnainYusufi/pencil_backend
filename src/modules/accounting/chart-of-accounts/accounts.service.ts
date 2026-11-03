@@ -1,26 +1,38 @@
 import { Injectable } from '@nestjs/common';
+import { formatAmount } from '../../../common/helpers/money.js';
+import { RequestContext } from '../../../core/context/request-context.service.js';
 import { Db } from '../../../core/database/db.service.js';
 import { AppException } from '../../../core/errors/app.exception.js';
 import { ErrorCode } from '../../../core/errors/error-codes.js';
 import type { Account } from '../../../generated/prisma/client.js';
+import { hasPermission } from '../../../core/security/permissions.js';
+import { Permission } from '../../access/permissions.js';
 import { AuditService } from '../../audit/audit.service.js';
+import { AccountingContext } from '../accounting-context.service.js';
 import type { AccountsQueryDto, CreateAccountDto, UpdateAccountDto } from '../dto/accounts.dto.js';
 import { AccountsRepository } from '../repositories/accounts.repository.js';
+import { LedgerRepository } from '../repositories/ledger.repository.js';
 import { SUBTYPE_TYPE } from './system-accounts.js';
 
 /**
  * Chart-of-accounts rules:
  *  - the type follows from the subtype; a parent must be a group of the same type;
  *  - group-vs-postable is fixed at creation;
- *  - accounts with postings keep their type (history must stay meaningful);
+ *  - accounts with postings keep their type and category (reclassifying one
+ *    would silently restate every past statement);
  *  - system accounts (used by posting rules) can be renamed, never removed;
- *  - used accounts are deactivated, not deleted.
+ *  - used accounts are deactivated, not deleted, and only once their balance
+ *    is zero (a deactivated account must not hide money);
+ *  - the control-account flag (no manual journals) is a books.close decision.
  */
 @Injectable()
 export class AccountsService {
   constructor(
     private readonly db: Db,
+    private readonly ctx: RequestContext,
+    private readonly accounting: AccountingContext,
     private readonly accounts: AccountsRepository,
+    private readonly ledger: LedgerRepository,
     private readonly audit: AuditService,
   ) {}
 
@@ -67,9 +79,23 @@ export class AccountsService {
           throw new AppException(ErrorCode.SYSTEM_ACCOUNT_PROTECTED, 'System accounts cannot be deactivated');
         }
       }
-      if (nextType !== account.type) {
+      if (dto.subtype && dto.subtype !== account.subtype) {
         if (account.isGroup ? await this.accounts.hasChildren(id) : await this.accounts.hasActivity(id)) {
-          throw new AppException(ErrorCode.ACCOUNT_IN_USE, 'An account in use cannot change its type');
+          throw new AppException(ErrorCode.ACCOUNT_IN_USE, 'An account in use cannot change its category; create a new account and move the balance');
+        }
+      }
+      if (dto.allowManualPosting !== undefined && dto.allowManualPosting !== account.allowManualPosting) {
+        if (!hasPermission(this.ctx.requireUser().permissions, Permission.BOOKS_CLOSE)) {
+          throw new AppException(ErrorCode.PERMISSION_DENIED, 'Changing a control account needs the books.close permission');
+        }
+      }
+      if (dto.isActive === false && account.isActive && !account.isGroup) {
+        const balance = await this.ledger.balance(id);
+        if (!balance.isZero()) {
+          const { baseCurrency } = await this.accounting.profile();
+          throw new AppException(ErrorCode.ACCOUNT_IN_USE, 'An account with a balance cannot be deactivated; move the balance first', {
+            balance: formatAmount(balance, baseCurrency),
+          });
         }
       }
       if (dto.code && dto.code !== account.code) await this.assertCodeFree(dto.code);
@@ -90,6 +116,7 @@ export class AccountsService {
         type: nextType,
         parentId: dto.parentId,
         isActive: dto.isActive,
+        allowManualPosting: dto.allowManualPosting,
       });
       await this.audit.record({ action: 'account.updated', entityType: 'account', entityId: id, metadata: { changes: Object.keys(dto) } });
       return updated;
