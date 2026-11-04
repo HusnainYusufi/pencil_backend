@@ -20,3 +20,15 @@ export class AccountStatementQueryDto extends ReportRangeDto {
   @IsOptional() @IsString() @MaxLength(512) cursor?: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(500) limit: number = 100;
 }
+
+export class IncomeStatementQueryDto extends ReportRangeDto {
+  /** Add the same range one year earlier. */
+  @IsOptional() @ToBoolean() @IsBoolean() compare?: boolean;
+}
+
+export class BalanceSheetQueryDto {
+  /** Defaults to today. */
+  @IsOptional() @IsDateOnly() asOf?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsUUID() costCenterId?: string;
+}

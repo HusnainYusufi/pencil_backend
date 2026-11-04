@@ -36,6 +36,15 @@
 	}
 }
 
+# Tenant web app (companies). Public.
+{$APP_DOMAIN} {
+	import baseline
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy app:3000
+}
+
 # Platform console (Pencil staff only). Restrict to office/VPN ranges.
 {$ADMIN_DOMAIN} {
 	import baseline

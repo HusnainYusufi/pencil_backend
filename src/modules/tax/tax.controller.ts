@@ -4,7 +4,8 @@ import { RequireFeature, RequirePermissions, TenantAuth } from '../../core/secur
 import type { TaxRate } from '../../generated/prisma/client.js';
 import { Permission } from '../access/permissions.js';
 import { Feature } from '../entitlements/features.js';
-import { CreateTaxRateDto, TaxRatesQueryDto, UpdateTaxRateDto } from './tax.dto.js';
+import { CreateTaxRateDto, TaxRatesQueryDto, UpdateTaxRateDto, VatReturnQueryDto } from './tax.dto.js';
+import { VatReturnService } from './vat-return.service.js';
 import { TaxRatesService } from './tax-rates.service.js';
 
 export function toTaxRate(rate: TaxRate) {
@@ -54,5 +55,20 @@ export class TaxRatesController {
   @RequirePermissions(Permission.TAXES_MANAGE)
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTaxRateDto) {
     return toTaxRate(await this.taxRates.update(id, dto));
+  }
+}
+
+@ApiTags('Tax')
+@TenantAuth()
+@RequireFeature(Feature.VAT_RETURNS)
+@Controller('reports')
+export class VatReturnController {
+  constructor(private readonly vat: VatReturnService) {}
+
+  @Get('vat-return')
+  @ApiOperation({ summary: 'VAT / sales-tax return for a period (ZATCA boxes for KSA)' })
+  @RequirePermissions(Permission.REPORTS_READ)
+  vatReturn(@Query() query: VatReturnQueryDto) {
+    return this.vat.vatReturn(query);
   }
 }

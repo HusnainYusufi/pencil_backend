@@ -71,6 +71,8 @@ src/
     tax/         tax rates per company, seeded from country templates
     sales/       invoices, credit / debit notes, customer payments
     einvoicing/  government e-invoicing: ZATCA (UBL, signing, QR, API), devices, submission worker
+    purchases/   supplier bills and credits, expenses, supplier payments
+    email/       SMTP mailer and bilingual templates
 prisma/schema/   one .prisma file per bounded context
 prisma/migrations/
 ```
@@ -164,6 +166,24 @@ New document types (sales invoices, payments, ...) must post through `PostingSer
   `DATA_ENCRYPTION_KEY` (required in production).
 - `npm run zatca:sandbox` runs the whole flow against ZATCA's public developer portal (test VAT number and OTP,
   no customer data): six compliance documents, then one cleared and one reported invoice.
+
+### Purchases, statements, VAT return (`modules/purchases`, `accounting/reports`, `tax`)
+
+- **Purchases:** supplier bills (`BILL-…`, Dr expense/asset + VAT input, Cr payable), supplier credits (`VCN-…`, applied to
+  their bill), expenses paid at once (`EXP-…`, Cr cash/bank) and supplier payments (`PAY-…`). Draft → posted → void.
+- **Financial statements:** `GET /reports/income-statement` (any range, `compare=true` adds the same range a year earlier) and
+  `GET /reports/balance-sheet` (at a date; prior years' profit in retained earnings, this year's profit as its own equity line).
+- **VAT return:** `GET /reports/vat-return?from&to` from issued sales and posted purchase documents. KSA follows ZATCA's
+  return form (boxes 1–16; imports and prior-period corrections are entered on the portal); other countries get output and
+  input tax by rate.
+
+### Accounts, invitations and email (`identity`, `auth`, `email`)
+
+- **Email:** SMTP via `SMTP_*` settings (without `SMTP_HOST`, development logs emails instead). Bilingual (Arabic + English).
+- **Password reset:** `POST /auth/password/forgot` (same answer for unknown emails) → emailed link →
+  `POST /auth/password/reset` (signs out every session).
+- **Invitations:** `POST /members/invite` (company members) and platform onboarding (the owner) email a link to
+  `APP_URL/invite`; new people set their password there. Links are single-use; only a SHA-256 of the secret is stored.
 
 Adding another authority (e.g. JoFotara) means a provider beside `einvoicing/zatca/` and an entry in
 `PROVIDER_BY_COUNTRY`; sales code does not change.

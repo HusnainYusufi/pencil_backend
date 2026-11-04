@@ -4,7 +4,8 @@ import { AccountingModule } from '../accounting/accounting.module.js';
 import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { TenantProvisioningHooks, type ProvisionedTenant, type TenantProvisioningHook } from '../tenancy/provisioning-hooks.js';
 import { bootstrapTaxRates } from './bootstrap-tax.js';
-import { TaxRatesController } from './tax.controller.js';
+import { TaxRatesController, VatReturnController } from './tax.controller.js';
+import { VatReturnRepository, VatReturnService } from './vat-return.service.js';
 import { TaxRatesRepository } from './tax-rates.repository.js';
 import { TaxRatesService } from './tax-rates.service.js';
 
@@ -34,8 +35,8 @@ export class TaxBootstrapService implements TenantProvisioningHook, OnModuleInit
  */
 @Module({
   imports: [TenancyModule, AccountingModule],
-  controllers: [TaxRatesController],
-  providers: [TaxRatesRepository, TaxRatesService, TaxBootstrapService],
+  controllers: [TaxRatesController, VatReturnController],
+  providers: [TaxRatesRepository, TaxRatesService, TaxBootstrapService, VatReturnRepository, VatReturnService],
   exports: [TaxRatesRepository, TaxRatesService],
 })
 export class TaxModule {}

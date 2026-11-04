@@ -1,0 +1,162 @@
+// Purchases: supplier bills, supplier credit notes, expenses paid at once,
+// and payments to suppliers. Tenant-scoped (RLS). Posting a document writes
+// its journal through the accounting engine; posted documents are immutable.
+
+enum PurchaseDocumentType {
+  /// Supplier invoice on credit (accounts payable).
+  BILL
+  /// Credit received from a supplier against a bill.
+  CREDIT_NOTE
+  /// Paid immediately from a cash or bank account (no payable).
+  EXPENSE
+}
+
+enum PurchaseStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+model PurchaseBill {
+  id                String               @id @default(uuid(7)) @db.Uuid
+  tenantId          String               @map("tenant_id") @db.Uuid
+  type              PurchaseDocumentType @default(BILL)
+  status            PurchaseStatus       @default(DRAFT)
+  /// Gapless per company, type and year; assigned at posting (BILL-2026-000001).
+  number            String?              @db.VarChar(30)
+  /// The supplier's own invoice number.
+  supplierReference String?              @map("supplier_reference") @db.VarChar(100)
+  contactId         String?              @map("contact_id") @db.Uuid
+  billDate          DateTime             @map("bill_date") @db.Date
+  dueDate           DateTime?            @map("due_date") @db.Date
+  currency          String               @db.Char(3)
+  exchangeRate      Decimal              @default(1) @map("exchange_rate") @db.Decimal(18, 8)
+  pricesIncludeTax  Boolean              @default(false) @map("prices_include_tax")
+  /// Credit notes: the bill being credited.
+  originalBillId    String?              @map("original_bill_id") @db.Uuid
+  /// Expenses: the cash or bank account that paid.
+  paidFromAccountId String?              @map("paid_from_account_id") @db.Uuid
+  reason            String?              @db.VarChar(500)
+  notes             String?              @db.VarChar(2000)
+  branchId          String?              @map("branch_id") @db.Uuid
+  subtotal          Decimal              @default(0) @db.Decimal(20, 4)
+  discountTotal     Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
+  taxableAmount     Decimal              @default(0) @map("taxable_amount") @db.Decimal(20, 4)
+  taxTotal          Decimal              @default(0) @map("tax_total") @db.Decimal(20, 4)
+  total             Decimal              @default(0) @db.Decimal(20, 4)
+  amountPaid        Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  /// Bills: settled by supplier credit notes. Credit notes: applied to the bill.
+  amountCredited    Decimal              @default(0) @map("amount_credited") @db.Decimal(20, 4)
+  /// Supplier as on the document (name, VAT number), frozen at posting.
+  supplier          Json?
+  journalEntryId    String?              @unique @map("journal_entry_id") @db.Uuid
+  createdById       String?              @map("created_by_id") @db.Uuid
+  postedById        String?              @map("posted_by_id") @db.Uuid
+  postedAt          DateTime?            @map("posted_at") @db.Timestamptz(3)
+  voidedById        String?              @map("voided_by_id") @db.Uuid
+  voidedAt          DateTime?            @map("voided_at") @db.Timestamptz(3)
+  voidReason        String?              @map("void_reason") @db.VarChar(500)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact?                    @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  originalBill PurchaseBill?               @relation("PurchaseAdjustments", fields: [originalBillId], references: [id], onDelete: Restrict)
+  adjustments  PurchaseBill[]              @relation("PurchaseAdjustments")
+  paidFrom     Account?                    @relation("ExpensePaidFrom", fields: [paidFromAccountId], references: [id], onDelete: Restrict)
+  branch       Branch?                     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry?               @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  lines        PurchaseBillLine[]
+  allocations  SupplierPaymentAllocation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, billDate])
+  @@index([tenantId, contactId])
+  @@index([originalBillId])
+  @@map("purchase_bills")
+}
+
+model PurchaseBillLine {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  billId        String      @map("bill_id") @db.Uuid
+  lineNo        Int         @map("line_no")
+  description   String      @db.VarChar(1000)
+  quantity      Decimal     @db.Decimal(18, 6)
+  unitPrice     Decimal     @map("unit_price") @db.Decimal(20, 6)
+  discount      Decimal     @default(0) @db.Decimal(20, 4)
+  taxRateId     String      @map("tax_rate_id") @db.Uuid
+  taxCategory   TaxCategory @map("tax_category")
+  taxPercent    Decimal     @map("tax_percent") @db.Decimal(7, 4)
+  exemptionCode String?     @map("exemption_code") @db.VarChar(30)
+  /// Expense, asset or inventory account debited.
+  accountId     String      @map("account_id") @db.Uuid
+  costCenterId  String?     @map("cost_center_id") @db.Uuid
+  netAmount     Decimal     @map("net_amount") @db.Decimal(20, 4)
+  taxAmount     Decimal     @map("tax_amount") @db.Decimal(20, 4)
+  totalAmount   Decimal     @map("total_amount") @db.Decimal(20, 4)
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bill       PurchaseBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  taxRate    TaxRate      @relation(fields: [taxRateId], references: [id], onDelete: Restrict)
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@unique([billId, lineNo])
+  @@index([tenantId, accountId])
+  @@map("purchase_bill_lines")
+}
+
+enum SupplierPaymentStatus {
+  POSTED
+  VOID
+}
+
+model SupplierPayment {
+  id             String                @id @default(uuid(7)) @db.Uuid
+  tenantId       String                @map("tenant_id") @db.Uuid
+  /// Gapless per company and year (PAY-2026-000001).
+  number         String                @db.VarChar(30)
+  contactId      String                @map("contact_id") @db.Uuid
+  date           DateTime              @db.Date
+  currency       String                @db.Char(3)
+  amount         Decimal               @db.Decimal(20, 4)
+  method         PaymentMeans          @default(BANK_TRANSFER)
+  /// Cash or bank account credited.
+  accountId      String                @map("account_id") @db.Uuid
+  reference      String?               @db.VarChar(100)
+  notes          String?               @db.VarChar(1000)
+  status         SupplierPaymentStatus @default(POSTED)
+  journalEntryId String?               @unique @map("journal_entry_id") @db.Uuid
+  createdById    String?               @map("created_by_id") @db.Uuid
+  voidedById     String?               @map("voided_by_id") @db.Uuid
+  voidedAt       DateTime?             @map("voided_at") @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact                     @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  account      Account                     @relation("SupplierPaymentAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry?               @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations  SupplierPaymentAllocation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, contactId, date])
+  @@map("supplier_payments")
+}
+
+model SupplierPaymentAllocation {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  billId    String  @map("bill_id") @db.Uuid
+  amount    Decimal @db.Decimal(20, 4)
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bill    PurchaseBill    @relation(fields: [billId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+  @@map("supplier_payment_allocations")
+}

@@ -69,6 +69,12 @@ model Tenant {
   einvoicingUnits    EInvoicingUnit[]
   einvoiceDocuments  EInvoiceDocument[]
 
+  // Purchases
+  purchaseBills              PurchaseBill[]
+  purchaseBillLines          PurchaseBillLine[]
+  supplierPayments           SupplierPayment[]
+  supplierPaymentAllocations SupplierPaymentAllocation[]
+
   @@index([status])
   @@index([country])
   @@map("tenants")

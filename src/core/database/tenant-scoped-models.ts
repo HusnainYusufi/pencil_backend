@@ -29,6 +29,11 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<Prisma.ModelName> = new Set<Prism
   'SalesInvoiceLine',
   'CustomerPayment',
   'PaymentAllocation',
+  // Purchases
+  'PurchaseBill',
+  'PurchaseBillLine',
+  'SupplierPayment',
+  'SupplierPaymentAllocation',
   // E-invoicing
   'EInvoicingUnit',
   'EInvoiceDocument',

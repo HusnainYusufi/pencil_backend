@@ -15,10 +15,12 @@ import { UserSessionsRepository } from '../identity/user-sessions.repository.js'
 import { UsersRepository } from '../identity/users.repository.js';
 import { MembershipsRepository, type UserTenantView } from '../tenancy/repositories/memberships.repository.js';
 import { TenantProvisioningService } from '../tenancy/tenant-provisioning.service.js';
-import type { LoginDto, SignupDto } from './dto/auth.dto.js';
+import type { AcceptInvitationDto, LoginDto, SignupDto } from './dto/auth.dto.js';
 import { PasswordService } from './password.service.js';
 import { evaluateRefresh } from './refresh-policy.js';
 import { TokenService, type IssuedAccessToken } from './token.service.js';
+import { AccountLinksService } from '../identity/account-links.service.js';
+import { TenantsRepository } from '../tenancy/repositories/tenants.repository.js';
 
 export interface SessionTokens extends IssuedAccessToken {
   refreshToken: string;
@@ -75,6 +77,8 @@ export class UserAuthService {
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
     private readonly accessCache: AccessCache,
+    private readonly links: AccountLinksService,
+    private readonly tenants: TenantsRepository,
   ) {}
 
   /** Self-service onboarding: user + company + owner role + trial, atomically. */
@@ -124,6 +128,11 @@ export class UserAuthService {
       throw new AppException(ErrorCode.ACCOUNT_LOCKED, 'Too many failed attempts; try again later', {
         retryAfterSeconds: Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000),
       });
+    }
+    if (!user.passwordHash) {
+      // Invited, never activated: same answer as a wrong password (no account probing).
+      await this.passwords.verifyDummy(dto.password);
+      throw this.invalidCredentials();
     }
     if (!(await this.passwords.verify(user.passwordHash, dto.password))) {
       const { maxFailedAttempts, lockoutMs } = this.config.authLockout;
@@ -233,6 +242,65 @@ export class UserAuthService {
     this.accessCache.invalidateUser(actor.userId);
     await this.audit.record({ action: 'auth.logout_all', metadata: { sessions: count } });
     return count;
+  }
+
+  /** Always answers the same way, whether or not the email exists. */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.users.findByEmail(normalizeEmail(email));
+    if (!user || user.status !== 'ACTIVE') return;
+    await this.links.sendPasswordReset(user);
+    await this.audit.record({ action: 'auth.password_reset_requested', tenantId: null, actor: { type: 'USER', id: user.id } });
+  }
+
+  /** Sets a new password from an emailed link and signs out every session. */
+  async resetPassword(token: string, password: string): Promise<void> {
+    const link = await this.links.verify(token, 'PASSWORD_RESET');
+    const hash = await this.passwords.hash(password);
+    if (!(await this.links.consume(link.id))) throw new AppException(ErrorCode.LINK_INVALID, 'This link is invalid or has expired');
+    await this.users.setPassword(link.userId, hash);
+    await this.sessions.revokeAllForUser(link.userId, 'password_reset');
+    this.accessCache.invalidateUser(link.userId);
+    await this.audit.record({ action: 'auth.password_reset', tenantId: null, actor: { type: 'USER', id: link.userId } });
+  }
+
+  /** What an invitation link is for (shown before accepting). */
+  async invitation(token: string) {
+    const link = await this.links.verify(token, 'INVITATION');
+    const tenant = link.tenantId ? await this.tenants.findById(link.tenantId) : null;
+    if (!tenant) throw new AppException(ErrorCode.LINK_INVALID, 'This link is invalid or has expired');
+    return {
+      email: link.user.email,
+      fullName: link.user.fullName,
+      company: { id: tenant.id, name: tenant.tradeName ?? tenant.legalName },
+      needsPassword: link.user.passwordHash === null,
+      expiresAt: link.expiresAt,
+    };
+  }
+
+  /** Activates the membership (and the account when new) and signs the user in to that company. */
+  async acceptInvitation(dto: AcceptInvitationDto): Promise<AuthResult> {
+    const link = await this.links.verify(dto.token, 'INVITATION');
+    const tenantId = link.tenantId!;
+    const needsPassword = link.user.passwordHash === null;
+    if (needsPassword && !dto.password) {
+      throw new AppException(ErrorCode.VALIDATION_FAILED, 'Request validation failed', [{ field: 'password', errors: ['choose a password'] }]);
+    }
+    const hash = needsPassword ? await this.passwords.hash(dto.password!) : null;
+
+    await this.db.asSystem(() =>
+      this.db.transaction(async () => {
+        if (!(await this.links.consume(link.id))) throw new AppException(ErrorCode.LINK_INVALID, 'This link is invalid or has expired');
+        if (hash) await this.users.setPassword(link.userId, hash, dto.fullName?.trim());
+        await this.memberships.activate(tenantId, link.userId);
+        await this.audit.record({ action: 'member.invitation_accepted', tenantId, actor: { type: 'USER', id: link.userId }, entityType: 'user', entityId: link.userId });
+      }),
+    );
+    this.accessCache.invalidateUser(link.userId);
+
+    const user = (await this.users.findById(link.userId))!;
+    const tenants = await this.tenantsOf(user.id);
+    const tokens = await this.issueSession(user.id, tenants.some((t) => t.id === tenantId) ? tenantId : null);
+    return { ...tokens, user: toUserSummary(user), tenants };
   }
 
   /** Bootstrap payload for the frontend: who am I, where am I, what may I do. */

@@ -39,7 +39,7 @@ export class TenantsQueryDto extends SearchPageQueryDto {
 export class OnboardOwnerDto {
   @IsEmail() @MaxLength(254) email: string;
   @IsString() @Length(2, 150) fullName: string;
-  /** Required when the email has no account yet (until email invites ship). */
+  /** Optional: without it, a new owner sets the password from the emailed link. */
   @IsOptional() @IsString() @Length(10, 128) password?: string;
 }
 

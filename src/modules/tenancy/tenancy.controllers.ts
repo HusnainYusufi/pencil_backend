@@ -5,6 +5,7 @@ import { Permission } from '../access/permissions.js';
 import { Feature } from '../entitlements/features.js';
 import {
   CreateRoleDto,
+  InviteMemberDto,
   MembersQueryDto,
   UpdateMemberRoleDto,
   UpdateRoleDto,
@@ -80,6 +81,28 @@ export class MembersController {
   @RequirePermissions(Permission.MEMBERS_READ)
   list(@Query() query: MembersQueryDto) {
     return this.members.list(query);
+  }
+
+  @Post('invite')
+  @ApiOperation({ summary: 'Invite someone by email (they set a password from the link)' })
+  @RequirePermissions(Permission.MEMBERS_MANAGE)
+  invite(@Body() dto: InviteMemberDto) {
+    return this.members.invite(dto);
+  }
+
+  @Post(':id/resend-invitation')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(Permission.MEMBERS_MANAGE)
+  resend(@Param('id', ParseUUIDPipe) id: string) {
+    return this.members.resendInvitation(id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Withdraw a pending invitation' })
+  @RequirePermissions(Permission.MEMBERS_MANAGE)
+  async revoke(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.members.revokeInvitation(id);
   }
 
   @Patch(':id/role')

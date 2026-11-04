@@ -62,4 +62,5 @@ export class UpdateContactDto extends PartialType(CreateContactDto) {
 export class ContactsQueryDto extends SearchPageQueryDto {
   @IsOptional() @ToBoolean() @IsBoolean() includeInactive?: boolean;
   @IsOptional() @ToBoolean() @IsBoolean() customers?: boolean;
+  @IsOptional() @ToBoolean() @IsBoolean() suppliers?: boolean;
 }

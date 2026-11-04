@@ -7,6 +7,7 @@ export interface ContactListFilter extends PageQuery {
   search?: string;
   includeInactive?: boolean;
   customers?: boolean;
+  suppliers?: boolean;
 }
 
 @Injectable()
@@ -21,6 +22,7 @@ export class ContactsRepository extends TenantScopedRepository {
       tenantId: this.tenantId,
       ...(!filter.includeInactive && { isActive: true }),
       ...(filter.customers && { isCustomer: true }),
+      ...(filter.suppliers && { isSupplier: true }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' } },
@@ -53,7 +55,11 @@ export class ContactsRepository extends TenantScopedRepository {
       this.client.salesInvoice.count({ where }),
       this.client.customerPayment.count({ where }),
     ]);
-    return invoices + payments > 0;
+    const [bills, supplierPayments] = await Promise.all([
+      this.client.purchaseBill.count({ where }),
+      this.client.supplierPayment.count({ where }),
+    ]);
+    return invoices + payments + bills + supplierPayments > 0;
   }
 
   async delete(id: string): Promise<void> {

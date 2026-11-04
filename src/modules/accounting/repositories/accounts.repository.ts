@@ -78,6 +78,9 @@ export class AccountsRepository extends TenantScopedRepository {
       this.client.taxRate.count({ where }),
       this.client.salesInvoiceLine.count({ where }),
       this.client.customerPayment.count({ where }),
+      this.client.purchaseBillLine.count({ where }),
+      this.client.supplierPayment.count({ where }),
+      this.client.purchaseBill.count({ where: { tenantId: this.tenantId, paidFromAccountId: id } }),
     ]);
     return counts.some((n) => n > 0);
   }

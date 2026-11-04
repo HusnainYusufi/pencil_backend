@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, MaxLength } from 'class-validator';
-import { ToBoolean } from '../../common/dto/validators.js';
+import { IsDateOnly, ToBoolean } from '../../common/dto/validators.js';
 import { TaxCategory } from '../../generated/prisma/enums.js';
 
 const PERCENT = /^\d{1,3}(\.\d{1,4})?$/;
@@ -37,4 +37,9 @@ export class UpdateTaxRateDto {
 
 export class TaxRatesQueryDto {
   @IsOptional() @ToBoolean() @IsBoolean() includeInactive?: boolean;
+}
+
+export class VatReturnQueryDto {
+  @IsDateOnly() from: string;
+  @IsDateOnly() to: string;
 }

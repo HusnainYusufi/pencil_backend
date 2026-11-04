@@ -17,6 +17,22 @@ export class UsersRepository extends BaseRepository {
     return this.client.user.create({ data });
   }
 
+  /** New password from an emailed link: also proves the email and clears any lockout. */
+  setPassword(id: string, passwordHash: string, fullName?: string): Promise<User> {
+    const now = new Date();
+    return this.client.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        passwordChangedAt: now,
+        emailVerifiedAt: now,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        ...(fullName && { fullName }),
+      },
+    });
+  }
+
   /**
    * Atomically counts a failed login; on reaching `maxAttempts` the account
    * is locked for `lockoutMs` and the counter resets. Single statement, so

@@ -58,6 +58,8 @@ enum JournalSource {
   REVERSAL
   SALES_INVOICE
   CUSTOMER_PAYMENT
+  PURCHASE_BILL
+  SUPPLIER_PAYMENT
 }
 
 model Account {
@@ -86,6 +88,9 @@ model Account {
   taxRates          TaxRate[]
   salesInvoiceLines SalesInvoiceLine[]
   customerPayments  CustomerPayment[]
+  purchaseBillLines PurchaseBillLine[]
+  expensesPaid      PurchaseBill[]     @relation("ExpensePaidFrom")
+  supplierPayments  SupplierPayment[]  @relation("SupplierPaymentAccount")
 
   @@unique([tenantId, code])
   @@unique([tenantId, systemKey])
@@ -150,6 +155,7 @@ model Branch {
   journalLines  JournalLine[]
   ledgerEntries LedgerEntry[]
   salesInvoices SalesInvoice[]
+  purchaseBills PurchaseBill[]
 
   @@unique([tenantId, code])
   @@map("branches")
@@ -169,6 +175,7 @@ model CostCenter {
   journalLines      JournalLine[]
   ledgerEntries     LedgerEntry[]
   salesInvoiceLines SalesInvoiceLine[]
+  purchaseBillLines PurchaseBillLine[]
 
   @@unique([tenantId, code])
   @@map("cost_centers")
@@ -207,6 +214,8 @@ model JournalEntry {
   reversedBy      JournalEntry?    @relation("JournalReversal")
   salesInvoice    SalesInvoice?
   customerPayment CustomerPayment?
+  purchaseBill    PurchaseBill?
+  supplierPayment SupplierPayment?
 
   @@unique([tenantId, number])
   @@index([tenantId, status, date])

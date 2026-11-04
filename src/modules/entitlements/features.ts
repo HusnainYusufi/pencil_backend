@@ -81,22 +81,22 @@ const DEFINITIONS: Array<Omit<FeatureDefinition, 'type'> & { type?: FeatureType 
   { key: Feature.FIXED_ASSETS, module: 'ACCOUNTING', status: 'COMING_SOON', plans: BUSINESS, name: 'Fixed assets', description: 'Asset register, depreciation schedules, disposals' },
   // ── Reports ──────────────────────────────────────────────────────────
   { key: Feature.LEDGER_REPORTS, module: 'REPORTS', status: 'AVAILABLE', plans: ALL, name: 'Trial balance & statements', description: 'Trial balance and account statements from the ledger' },
-  { key: Feature.FINANCIAL_STATEMENTS, module: 'REPORTS', status: 'COMING_SOON', plans: ALL, name: 'Financial statements', description: 'Income statement, balance sheet and cash flow' },
+  { key: Feature.FINANCIAL_STATEMENTS, module: 'REPORTS', status: 'AVAILABLE', plans: ALL, name: 'Financial statements', description: 'Income statement (with prior-year comparison) and balance sheet' },
   { key: Feature.CUSTOM_REPORTS, module: 'REPORTS', status: 'COMING_SOON', plans: BUSINESS, name: 'Custom reports', description: 'Saved, configurable report templates' },
   // ── Sales ────────────────────────────────────────────────────────────
   { key: Feature.SALES_INVOICES, module: 'SALES', status: 'AVAILABLE', plans: ALL, name: 'Sales invoices', description: 'Customers, tax and simplified invoices, credit and debit notes, customer payments' },
   { key: Feature.QUOTATIONS, module: 'SALES', status: 'COMING_SOON', plans: PRO_UP, name: 'Quotations', description: 'Quotes that convert into invoices' },
   { key: Feature.RECURRING_INVOICES, module: 'SALES', status: 'COMING_SOON', plans: PRO_UP, name: 'Recurring invoices', description: 'Subscription and contract billing on a schedule' },
   // ── Purchases ────────────────────────────────────────────────────────
-  { key: Feature.BILLS, module: 'PURCHASES', status: 'COMING_SOON', plans: ALL, name: 'Supplier bills', description: 'Bills, debit notes and supplier payments' },
-  { key: Feature.EXPENSES, module: 'PURCHASES', status: 'COMING_SOON', plans: ALL, name: 'Expenses', description: 'Expenses with receipt capture' },
+  { key: Feature.BILLS, module: 'PURCHASES', status: 'AVAILABLE', plans: ALL, name: 'Supplier bills', description: 'Bills, supplier credits, expenses and supplier payments' },
+  { key: Feature.EXPENSES, module: 'PURCHASES', status: 'AVAILABLE', plans: ALL, name: 'Expenses', description: 'Expenses paid at once from cash or bank' },
   { key: Feature.PURCHASE_ORDERS, module: 'PURCHASES', status: 'COMING_SOON', plans: BUSINESS, name: 'Purchase orders', description: 'Orders, goods receipts and landed cost' },
   // ── Banking ──────────────────────────────────────────────────────────
   { key: Feature.BANK_ACCOUNTS, module: 'BANKING', status: 'COMING_SOON', plans: ALL, name: 'Bank & cash', description: 'Bank and cash accounts, transfers and cheques' },
   { key: Feature.BANK_RECONCILIATION, module: 'BANKING', status: 'COMING_SOON', plans: PRO_UP, name: 'Bank reconciliation', description: 'Statement import and matching' },
   { key: Feature.BANK_FEEDS, module: 'BANKING', status: 'COMING_SOON', plans: BUSINESS, name: 'Live bank feeds', description: 'Automatic transactions via open banking' },
   // ── Tax ──────────────────────────────────────────────────────────────
-  { key: Feature.VAT_RETURNS, module: 'TAX', status: 'COMING_SOON', plans: ALL, name: 'VAT / sales-tax returns', description: 'ZATCA VAT and Jordan GST return preparation' },
+  { key: Feature.VAT_RETURNS, module: 'TAX', status: 'AVAILABLE', plans: ALL, name: 'VAT / sales-tax returns', description: 'ZATCA VAT and Jordan GST return preparation' },
   { key: Feature.EINVOICING, module: 'TAX', status: 'AVAILABLE', plans: ALL, name: 'E-invoicing', description: 'ZATCA Fatoora Phase 2 (KSA): device onboarding, clearance and reporting. JoFotara (Jordan) next.' },
   // ── Inventory ────────────────────────────────────────────────────────
   { key: Feature.INVENTORY, module: 'INVENTORY', status: 'COMING_SOON', plans: PRO_UP, name: 'Products & stock', description: 'Items, stock levels and weighted-average costing' },
