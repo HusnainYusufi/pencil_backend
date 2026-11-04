@@ -34,6 +34,8 @@ PENCIL_APP_PASSWORD=$(rand 32)
 JWT_ACCESS_SECRET=$(rand 48)
 JWT_PLATFORM_SECRET=$(rand 48)
 SESSION_SECRET=$(rand 48)
+# Exactly 32 random bytes, standard base64 (AES-256 data key).
+DATA_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
 SEED_ADMIN_PASSWORD="$(rand 18)-Pn1"
 
 render() {
@@ -50,6 +52,7 @@ render() {
     -e "s|__JWT_ACCESS_SECRET__|$JWT_ACCESS_SECRET|g" \
     -e "s|__JWT_PLATFORM_SECRET__|$JWT_PLATFORM_SECRET|g" \
     -e "s|__SESSION_SECRET__|$SESSION_SECRET|g" \
+    -e "s|__DATA_ENCRYPTION_KEY__|$DATA_ENCRYPTION_KEY|g" \
     -e "s|__SEED_ADMIN_EMAIL__|$SEED_ADMIN_EMAIL|g" \
     -e "s|__SEED_ADMIN_PASSWORD__|$SEED_ADMIN_PASSWORD|g" \
     "$1.env.example" > "$1.env"

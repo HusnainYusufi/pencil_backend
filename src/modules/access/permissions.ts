@@ -27,6 +27,13 @@ export const Permission = {
   BILLS_READ: 'bills.read',
   BILLS_MANAGE: 'bills.manage',
   REPORTS_READ: 'reports.read',
+  /** Payments received from customers (allocated to invoices). */
+  PAYMENTS_READ: 'payments.read',
+  PAYMENTS_MANAGE: 'payments.manage',
+  /** Tax rates of the company. */
+  TAXES_MANAGE: 'taxes.manage',
+  /** Onboard / manage government e-invoicing devices (ZATCA, JoFotara). */
+  EINVOICING_MANAGE: 'einvoicing.manage',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];

@@ -15,6 +15,8 @@ export const TEST_ENV = {
   JWT_ACCESS_SECRET: 'test-tenant-access-secret-0123456789abcdef',
   JWT_PLATFORM_SECRET: 'test-platform-access-secret-0123456789abcd',
   AUTH_MAX_FAILED_LOGINS: '3',
+  DATA_ENCRYPTION_KEY: 'dGVzdC1kYXRhLWVuY3J5cHRpb24ta2V5LTMyYnl0ZXM=',
+  EINVOICING_WORKER_ENABLED: 'false',
 } as const;
 
 export const TEST_PLATFORM_ADMIN = { email: 'root@pencil.test', password: 'PlatformRoot!2026' } as const;

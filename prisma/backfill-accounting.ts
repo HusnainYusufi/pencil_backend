@@ -3,10 +3,12 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import { bootstrapAccounting } from '../src/modules/accounting/bootstrap-accounting.js';
+import { bootstrapTaxRates } from '../src/modules/tax/bootstrap-tax.js';
 
 /**
- * Data migration for companies created before the accounting module: gives
- * each one its chart of accounts, main branch and current fiscal year.
+ * Data migration for companies created before the accounting / tax modules:
+ * gives each one its chart of accounts, main branch, current fiscal year and
+ * its country's tax rates.
  *
  * Idempotent (skips companies that already have accounts) and transactional
  * per company, so it is safe to run on every release. Runs as the schema
@@ -24,17 +26,24 @@ async function main(): Promise<void> {
       orderBy: { id: 'asc' },
     });
     let seeded = 0;
+    let taxSeeded = 0;
     for (const tenant of tenants) {
       const result = await prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
-        if ((await tx.account.count({ where: { tenantId: tenant.id } })) > 0) return null;
-        return bootstrapAccounting(tx, tenant);
+        const accounting = (await tx.account.count({ where: { tenantId: tenant.id } })) > 0 ? null : await bootstrapAccounting(tx, tenant);
+        const taxRates = (await tx.taxRate.count({ where: { tenantId: tenant.id } })) > 0 ? 0 : await bootstrapTaxRates(tx, tenant);
+        return { accounting, taxRates };
       });
-      if (result) {
+      if (result.accounting) {
         seeded++;
-        console.log(`✔ ${tenant.slug}: ${result.accounts} accounts, ${result.fiscalYear}`);
+        console.log(`✔ ${tenant.slug}: ${result.accounting.accounts} accounts, ${result.accounting.fiscalYear}`);
+      }
+      if (result.taxRates > 0) {
+        taxSeeded++;
+        console.log(`✔ ${tenant.slug}: ${result.taxRates} tax rates`);
       }
     }
+    if (taxSeeded) console.log(`✔ tax rates backfilled for ${taxSeeded} companies`);
     console.log(seeded ? `✔ accounting backfilled for ${seeded} of ${tenants.length} companies` : `• accounting already set up for all ${tenants.length} companies`);
   } finally {
     await prisma.$disconnect();

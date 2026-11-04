@@ -11,6 +11,8 @@ export interface CountryProfile {
   eInvoicingSystem: string;
   /** Format of the tax registration number. */
   taxNumberPattern: RegExp;
+  /** Zero-rated / exempt / out-of-scope lines must carry an authority reason code. */
+  exemptionCodeRequired: boolean;
 }
 
 export const COUNTRY_PROFILES: Readonly<Record<CountryCode, CountryProfile>> = {
@@ -24,6 +26,7 @@ export const COUNTRY_PROFILES: Readonly<Record<CountryCode, CountryProfile>> = {
     eInvoicingSystem: 'FATOORA',
     // VAT registration number: 15 digits, starts and ends with 3.
     taxNumberPattern: /^3\d{13}3$/,
+    exemptionCodeRequired: true,
   },
   JO: {
     code: 'JO',
@@ -35,5 +38,6 @@ export const COUNTRY_PROFILES: Readonly<Record<CountryCode, CountryProfile>> = {
     eInvoicingSystem: 'JOFOTARA',
     // Tax identification number (numeric).
     taxNumberPattern: /^\d{6,15}$/,
+    exemptionCodeRequired: false,
   },
 };

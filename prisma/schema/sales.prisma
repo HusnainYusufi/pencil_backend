@@ -1,0 +1,276 @@
+// Sales: contacts (customers), tax rates, sales documents (invoices, credit
+// and debit notes) and customer payments. Every table is tenant-scoped (RLS).
+//
+// Issuing a document posts it to the general ledger through the accounting
+// posting engine; an issued document is immutable (corrections are credit or
+// debit notes). Country specifics (tax codes, e-invoicing) live in data and in
+// the e-invoicing providers, not in these tables.
+
+enum ContactType {
+  BUSINESS
+  INDIVIDUAL
+}
+
+model Contact {
+  id                      String      @id @default(uuid(7)) @db.Uuid
+  tenantId                String      @map("tenant_id") @db.Uuid
+  type                    ContactType @default(BUSINESS)
+  isCustomer              Boolean     @default(true) @map("is_customer")
+  isSupplier              Boolean     @default(false) @map("is_supplier")
+  /// Optional customer number, unique per company.
+  code                    String?     @db.VarChar(30)
+  name                    String      @db.VarChar(200)
+  nameAr                  String?     @map("name_ar") @db.VarChar(200)
+  email                   String?     @db.VarChar(254)
+  phone                   String?     @db.VarChar(32)
+  /// VAT / sales-tax registration number.
+  taxNumber               String?     @map("tax_number") @db.VarChar(32)
+  /// Other legal identifier and its scheme (CRN, NAT national ID, PAS passport, ...).
+  idScheme                String?     @map("id_scheme") @db.VarChar(10)
+  idNumber                String?     @map("id_number") @db.VarChar(50)
+  addressStreet           String?     @map("address_street") @db.VarChar(200)
+  addressBuildingNumber   String?     @map("address_building_number") @db.VarChar(20)
+  addressAdditionalNumber String?     @map("address_additional_number") @db.VarChar(20)
+  addressDistrict         String?     @map("address_district") @db.VarChar(100)
+  addressCity             String?     @map("address_city") @db.VarChar(100)
+  addressPostalCode       String?     @map("address_postal_code") @db.VarChar(20)
+  addressRegion           String?     @map("address_region") @db.VarChar(100)
+  /// ISO 3166-1 alpha-2.
+  addressCountry          String?     @map("address_country") @db.Char(2)
+  paymentTermsDays        Int?        @map("payment_terms_days")
+  notes                   String?     @db.VarChar(2000)
+  isActive                Boolean     @default(true) @map("is_active")
+  createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices SalesInvoice[]
+  payments CustomerPayment[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, name])
+  @@map("contacts")
+}
+
+/// UNCL 5305 categories: S, Z, E, O.
+enum TaxCategory {
+  STANDARD
+  ZERO_RATED
+  EXEMPT
+  OUT_OF_SCOPE
+}
+
+/// Seeded per country (VAT 15% KSA, GST 16% Jordan, ...); companies can add more.
+model TaxRate {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  code            String      @db.VarChar(30)
+  name            String      @db.VarChar(150)
+  nameAr          String?     @map("name_ar") @db.VarChar(150)
+  /// Percentage, e.g. 15.0000.
+  rate            Decimal     @db.Decimal(7, 4)
+  category        TaxCategory
+  /// Zero-rating / exemption reason printed on e-invoices (e.g. VATEX-SA-EDU).
+  exemptionCode   String?     @map("exemption_code") @db.VarChar(30)
+  exemptionReason String?     @map("exemption_reason") @db.VarChar(300)
+  /// Output tax account (vat_output by default).
+  accountId       String      @map("account_id") @db.Uuid
+  isDefault       Boolean     @default(false) @map("is_default")
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account      Account            @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  invoiceLines SalesInvoiceLine[]
+
+  @@unique([tenantId, code])
+  @@map("tax_rates")
+}
+
+enum SalesDocumentType {
+  INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+/// STANDARD: business buyer (B2B tax invoice). SIMPLIFIED: consumer (B2C).
+enum InvoiceKind {
+  STANDARD
+  SIMPLIFIED
+}
+
+enum SalesInvoiceStatus {
+  DRAFT
+  ISSUED
+  VOID
+}
+
+enum PaymentMeans {
+  CASH
+  CREDIT
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+model SalesInvoice {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  tenantId          String             @map("tenant_id") @db.Uuid
+  type              SalesDocumentType  @default(INVOICE)
+  kind              InvoiceKind        @default(STANDARD)
+  status            SalesInvoiceStatus @default(DRAFT)
+  /// Gapless per company, type and year; assigned at issue (INV-2026-000001).
+  number            String?            @db.VarChar(30)
+  /// Document UUID (the e-invoice UUID too).
+  uuid              String             @unique @default(uuid(4)) @db.Uuid
+  contactId         String?            @map("contact_id") @db.Uuid
+  issueDate         DateTime           @map("issue_date") @db.Date
+  dueDate           DateTime?          @map("due_date") @db.Date
+  /// Date of supply / delivery (required on KSA tax invoices).
+  supplyDate        DateTime?          @map("supply_date") @db.Date
+  currency          String             @db.Char(3)
+  exchangeRate      Decimal            @default(1) @map("exchange_rate") @db.Decimal(18, 8)
+  pricesIncludeTax  Boolean            @default(false) @map("prices_include_tax")
+  paymentMeans      PaymentMeans       @default(CREDIT) @map("payment_means")
+  /// Credit / debit notes: the invoice being adjusted.
+  originalInvoiceId String?            @map("original_invoice_id") @db.Uuid
+  /// Credit / debit notes: why it is issued (mandatory for e-invoicing).
+  reason            String?            @db.VarChar(500)
+  reference         String?            @db.VarChar(100)
+  notes             String?            @db.VarChar(2000)
+  terms             String?            @db.VarChar(2000)
+  branchId          String?            @map("branch_id") @db.Uuid
+  /// Sum of quantity x price (tax exclusive), before line discounts.
+  subtotal          Decimal            @default(0) @db.Decimal(20, 4)
+  discountTotal     Decimal            @default(0) @map("discount_total") @db.Decimal(20, 4)
+  taxableAmount     Decimal            @default(0) @map("taxable_amount") @db.Decimal(20, 4)
+  taxTotal          Decimal            @default(0) @map("tax_total") @db.Decimal(20, 4)
+  total             Decimal            @default(0) @db.Decimal(20, 4)
+  /// Settled by customer payments.
+  amountPaid        Decimal            @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  /// Invoices: settled by credit notes. Credit notes: applied to the original invoice.
+  amountCredited    Decimal            @default(0) @map("amount_credited") @db.Decimal(20, 4)
+  /// Seller and buyer as printed, frozen at issue.
+  seller            Json?
+  buyer             Json?
+  /// Printable QR payload (e-invoicing stamp or the local Phase 1 code).
+  qrCode            String?            @map("qr_code")
+  journalEntryId    String?            @unique @map("journal_entry_id") @db.Uuid
+  createdById       String?            @map("created_by_id") @db.Uuid
+  issuedById        String?            @map("issued_by_id") @db.Uuid
+  issuedAt          DateTime?          @map("issued_at") @db.Timestamptz(3)
+  voidedById        String?            @map("voided_by_id") @db.Uuid
+  voidedAt          DateTime?          @map("voided_at") @db.Timestamptz(3)
+  voidReason        String?            @map("void_reason") @db.VarChar(500)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact         Contact?            @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  originalInvoice SalesInvoice?       @relation("SalesAdjustments", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  adjustments     SalesInvoice[]      @relation("SalesAdjustments")
+  branch          Branch?             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  journalEntry    JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  lines           SalesInvoiceLine[]
+  allocations     PaymentAllocation[]
+  einvoice        EInvoiceDocument?
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, issueDate])
+  @@index([tenantId, contactId])
+  @@index([originalInvoiceId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  invoiceId       String      @map("invoice_id") @db.Uuid
+  lineNo          Int         @map("line_no")
+  description     String      @db.VarChar(1000)
+  quantity        Decimal     @db.Decimal(18, 6)
+  /// UN/ECE recommendation 20 unit code (PCE, HUR, DAY, ...).
+  unitCode        String      @default("PCE") @map("unit_code") @db.VarChar(10)
+  /// As entered: tax inclusive when the document's prices include tax.
+  unitPrice       Decimal     @map("unit_price") @db.Decimal(20, 6)
+  discount        Decimal     @default(0) @db.Decimal(20, 4)
+  taxRateId       String      @map("tax_rate_id") @db.Uuid
+  /// Tax snapshot: later edits of the rate never change written documents.
+  taxCategory     TaxCategory @map("tax_category")
+  taxPercent      Decimal     @map("tax_percent") @db.Decimal(7, 4)
+  exemptionCode   String?     @map("exemption_code") @db.VarChar(30)
+  exemptionReason String?     @map("exemption_reason") @db.VarChar(300)
+  /// Revenue account credited (sales by default).
+  accountId       String      @map("account_id") @db.Uuid
+  costCenterId    String?     @map("cost_center_id") @db.Uuid
+  /// Tax exclusive, after discount.
+  netAmount       Decimal     @map("net_amount") @db.Decimal(20, 4)
+  taxAmount       Decimal     @map("tax_amount") @db.Decimal(20, 4)
+  totalAmount     Decimal     @map("total_amount") @db.Decimal(20, 4)
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice    SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  taxRate    TaxRate      @relation(fields: [taxRateId], references: [id], onDelete: Restrict)
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@unique([invoiceId, lineNo])
+  @@index([tenantId, accountId])
+  @@map("sales_invoice_lines")
+}
+
+enum CustomerPaymentStatus {
+  POSTED
+  VOID
+}
+
+/// Money received from a customer, allocated to their open invoices.
+model CustomerPayment {
+  id             String                @id @default(uuid(7)) @db.Uuid
+  tenantId       String                @map("tenant_id") @db.Uuid
+  /// Gapless per company and year (RCPT-2026-000001).
+  number         String                @db.VarChar(30)
+  contactId      String                @map("contact_id") @db.Uuid
+  date           DateTime              @db.Date
+  currency       String                @db.Char(3)
+  amount         Decimal               @db.Decimal(20, 4)
+  method         PaymentMeans          @default(CASH)
+  /// Cash or bank account debited.
+  accountId      String                @map("account_id") @db.Uuid
+  reference      String?               @db.VarChar(100)
+  notes          String?               @db.VarChar(1000)
+  status         CustomerPaymentStatus @default(POSTED)
+  journalEntryId String?               @unique @map("journal_entry_id") @db.Uuid
+  createdById    String?               @map("created_by_id") @db.Uuid
+  voidedById     String?               @map("voided_by_id") @db.Uuid
+  voidedAt       DateTime?             @map("voided_at") @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact             @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  account      Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations  PaymentAllocation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, contactId, date])
+  @@map("customer_payments")
+}
+
+model PaymentAllocation {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  invoiceId String  @map("invoice_id") @db.Uuid
+  amount    Decimal @db.Decimal(20, 4)
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice SalesInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}

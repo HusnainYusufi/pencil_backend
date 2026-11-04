@@ -39,6 +39,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       Permission.PERIODS_MANAGE,
       'contacts.*',
       'invoices.*',
+      'payments.*',
       'bills.*',
       Permission.REPORTS_READ,
     ],

@@ -12,7 +12,8 @@ import { DimensionsRepository } from '../repositories/dimensions.repository.js';
 import { JournalsRepository } from '../repositories/journals.repository.js';
 import { LedgerRepository } from '../repositories/ledger.repository.js';
 import { NumberSeriesRepository } from '../repositories/number-series.repository.js';
-import type { NormalizedJournalLine } from './journal-rules.js';
+import type { JournalSource } from '../../../generated/prisma/enums.js';
+import { normalizeJournalLines, type JournalLineInput, type NormalizedJournalLine } from './journal-rules.js';
 
 export const JOURNAL_NUMBER_PREFIX = 'JV';
 
@@ -41,6 +42,75 @@ export class PostingService {
     private readonly dimensions: DimensionsRepository,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Creates and posts the journal of a source document (sales invoice,
+   * customer payment, ...) in the caller's transaction. Returns the entry.
+   */
+  async postDocument(doc: {
+    date: Date;
+    source: Exclude<JournalSource, 'MANUAL' | 'OPENING_BALANCE' | 'REVERSAL'>;
+    sourceId: string;
+    reference: string | null;
+    memo: string | null;
+    currency: string;
+    lines: JournalLineInput[];
+  }): Promise<{ id: string; number: string }> {
+    return this.db.transaction(async () => {
+      const journal = normalizeJournalLines(doc.lines, doc.currency);
+      const entry = await this.journals.createDraft(
+        {
+          date: doc.date,
+          source: doc.source,
+          sourceId: doc.sourceId,
+          reference: doc.reference,
+          memo: doc.memo,
+          currency: doc.currency,
+          totalAmount: journal.total.toFixed(4),
+          createdById: this.ctx.actor?.type === 'user' ? this.ctx.actor.userId : null,
+        },
+        journal.lines,
+      );
+      await this.postDraft(entry.id);
+      const posted = await this.journals.findDetail(entry.id);
+      return { id: entry.id, number: posted!.number! };
+    });
+  }
+
+  /**
+   * Posts the mirror of a document's entry (debits <-> credits), linked to
+   * it. Used when a document is voided; the original stays in the ledger.
+   */
+  async postReversal(entryId: string, date: Date, memo: string): Promise<{ id: string; number: string }> {
+    return this.db.transaction(async () => {
+      const original = await this.journals.findDetail(entryId);
+      if (!original || original.status !== 'POSTED') throw AppException.notFound('Posted journal entry', entryId);
+      const reversal = await this.journals.createDraft(
+        {
+          date: date < original.date ? original.date : date,
+          source: 'REVERSAL',
+          reference: original.number,
+          memo,
+          currency: original.currency,
+          totalAmount: original.totalAmount.toString(),
+          reversalOfId: original.id,
+          createdById: this.ctx.actor?.type === 'user' ? this.ctx.actor.userId : null,
+        },
+        original.lines.map((l) => ({
+          lineNo: l.lineNo,
+          accountId: l.accountId,
+          debit: new Decimal(l.credit.toString()),
+          credit: new Decimal(l.debit.toString()),
+          description: l.description,
+          branchId: l.branchId,
+          costCenterId: l.costCenterId,
+        })),
+      );
+      await this.postDraft(reversal.id);
+      const posted = await this.journals.findDetail(reversal.id);
+      return { id: reversal.id, number: posted!.number! };
+    });
+  }
 
   async postDraft(entryId: string): Promise<void> {
     await this.db.transaction(async () => {
