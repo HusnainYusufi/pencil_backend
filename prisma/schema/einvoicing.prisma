@@ -1,0 +1,106 @@
+// Government e-invoicing: per-company devices ("EGS units" in ZATCA terms)
+// holding the cryptographic identity, and the submission record of every
+// e-invoice. Provider-neutral: ZATCA (KSA) today, JoFotara (Jordan) next.
+
+enum EInvoicingProvider {
+  ZATCA
+  JOFOTARA
+}
+
+enum EInvoicingEnvironment {
+  SANDBOX
+  SIMULATION
+  PRODUCTION
+}
+
+enum EInvoicingUnitStatus {
+  /// Onboarding started but not finished (compliance checks pending or failed).
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum EInvoiceStatus {
+  /// Signed locally; waiting to be (re)submitted.
+  PENDING
+  /// Standard invoice accepted and stamped by the authority.
+  CLEARED
+  /// Simplified invoice accepted by the authority.
+  REPORTED
+  /// Rejected by the authority: the document must be voided and re-issued.
+  REJECTED
+}
+
+model EInvoicingUnit {
+  id                   String                @id @default(uuid(7)) @db.Uuid
+  tenantId             String                @map("tenant_id") @db.Uuid
+  provider             EInvoicingProvider
+  environment          EInvoicingEnvironment
+  name                 String                @db.VarChar(100)
+  status               EInvoicingUnitStatus  @default(PENDING)
+  commonName           String                @map("common_name") @db.VarChar(100)
+  /// ZATCA EGS serial `1-<solution>|2-<model>|3-<serial>`.
+  serialNumber         String                @map("serial_number") @db.VarChar(200)
+  /// Invoice kinds the unit may issue: 4 flags (standard, simplified, ...).
+  invoiceTypes         String                @default("1100") @map("invoice_types") @db.Char(4)
+  /// Secrets below are encrypted with the application data key (SecretBox).
+  privateKey           String?               @map("private_key")
+  csr                  String?
+  complianceRequestId  String?               @map("compliance_request_id") @db.VarChar(100)
+  complianceToken      String?               @map("compliance_token")
+  complianceSecret     String?               @map("compliance_secret")
+  productionToken      String?               @map("production_token")
+  productionSecret     String?               @map("production_secret")
+  /// Production certificate (base64 DER).
+  certificate          String?
+  certificateExpiresAt DateTime?             @map("certificate_expires_at") @db.Timestamptz(3)
+  /// Hash chain every new e-invoice of this unit extends (ICV is gapless).
+  lastIcv              Int                   @default(0) @map("last_icv")
+  lastInvoiceHash      String?               @map("last_invoice_hash") @db.VarChar(100)
+  lastError            String?               @map("last_error") @db.VarChar(4000)
+  onboardedAt          DateTime?             @map("onboarded_at") @db.Timestamptz(3)
+  createdById          String?               @map("created_by_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documents EInvoiceDocument[]
+
+  @@index([tenantId, provider, status])
+  @@map("einvoicing_units")
+}
+
+model EInvoiceDocument {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  tenantId       String             @map("tenant_id") @db.Uuid
+  unitId         String             @map("unit_id") @db.Uuid
+  invoiceId      String             @unique @map("invoice_id") @db.Uuid
+  provider       EInvoicingProvider
+  /// CLEARANCE (standard / B2B) or REPORTING (simplified / B2C).
+  submissionType String             @map("submission_type") @db.VarChar(20)
+  uuid           String             @db.Uuid
+  icv            Int
+  previousHash   String             @map("previous_hash") @db.VarChar(100)
+  invoiceHash    String             @map("invoice_hash") @db.VarChar(100)
+  status         EInvoiceStatus     @default(PENDING)
+  /// Signed XML as generated; `clearedXml` is the authority-stamped copy.
+  xml            String
+  clearedXml     String?            @map("cleared_xml")
+  qr             String
+  warnings       Json?
+  errors         Json?
+  attempts       Int                @default(0)
+  lastAttemptAt  DateTime?          @map("last_attempt_at") @db.Timestamptz(3)
+  nextAttemptAt  DateTime?          @map("next_attempt_at") @db.Timestamptz(3)
+  acceptedAt     DateTime?          @map("accepted_at") @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit    EInvoicingUnit @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  invoice SalesInvoice   @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([unitId, icv])
+  @@index([status, nextAttemptAt])
+  @@map("einvoice_documents")
+}

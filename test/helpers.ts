@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/core/http/configure-app.js';
 import { createFastifyAdapter } from '../src/core/http/fastify-adapter.js';
 import { TEST_PLATFORM_ADMIN } from './setup-env.js';
 
 /** Boots the real application (same pipeline as production) on Fastify inject. */
-export async function createTestApp(): Promise<NestFastifyApplication> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+export async function createTestApp(
+  override: (builder: TestingModuleBuilder) => TestingModuleBuilder = (b) => b,
+): Promise<NestFastifyApplication> {
+  const moduleRef = await override(Test.createTestingModule({ imports: [AppModule] })).compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(createFastifyAdapter(false), { logger: false });
   await configureApp(app);
   await app.init();

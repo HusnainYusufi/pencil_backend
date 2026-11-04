@@ -35,6 +35,15 @@ export class UpdateTenantDto {
   @IsOptional() @IsString() @Length(4, 32) commercialRegistration?: string;
   @IsOptional() @IsIn(SUPPORTED_LOCALES) locale?: string;
   @IsOptional() @Validate(TimeZoneConstraint) timezone?: string;
+
+  // National address (required for KSA e-invoicing).
+  @IsOptional() @IsString() @Length(1, 200) addressStreet?: string;
+  @IsOptional() @IsString() @Length(1, 20) addressBuildingNumber?: string;
+  @IsOptional() @IsString() @Length(1, 20) addressAdditionalNumber?: string;
+  @IsOptional() @IsString() @Length(1, 100) addressDistrict?: string;
+  @IsOptional() @IsString() @Length(1, 100) addressCity?: string;
+  @IsOptional() @IsString() @Length(1, 20) addressPostalCode?: string;
+  @IsOptional() @IsString() @Length(1, 100) addressRegion?: string;
 }
 
 export class CreateRoleDto {

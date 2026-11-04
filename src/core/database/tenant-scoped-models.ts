@@ -22,4 +22,14 @@ export const TENANT_SCOPED_MODELS: ReadonlySet<Prisma.ModelName> = new Set<Prism
   'JournalLine',
   'LedgerEntry',
   'NumberSeries',
+  // Sales
+  'Contact',
+  'TaxRate',
+  'SalesInvoice',
+  'SalesInvoiceLine',
+  'CustomerPayment',
+  'PaymentAllocation',
+  // E-invoicing
+  'EInvoicingUnit',
+  'EInvoiceDocument',
 ]);

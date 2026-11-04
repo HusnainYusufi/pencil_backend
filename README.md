@@ -67,6 +67,10 @@ src/
     catalog/     plans & features (data access)
     audit/       append-only audit trail
     platform/    pencil_admin API: onboarding, lifecycle, plans, overrides, audit
+    contacts/    customers (and later suppliers)
+    tax/         tax rates per company, seeded from country templates
+    sales/       invoices, credit / debit notes, customer payments
+    einvoicing/  government e-invoicing: ZATCA (UBL, signing, QR, API), devices, submission worker
 prisma/schema/   one .prisma file per bounded context
 prisma/migrations/
 ```
@@ -139,6 +143,30 @@ splits). The database uses `Decimal`, never `Float`.
 
 New document types (sales invoices, payments, ...) must post through `PostingService`. Never write
 `ledger_entries` directly.
+
+### Sales & e-invoicing (`modules/contacts`, `modules/tax`, `modules/sales`, `modules/einvoicing`)
+
+- **Contacts:** customers (later suppliers): businesses or individuals (a student's guardian works too), with
+  tax number, other ID (CRN, national ID, passport...) and national address. Issued documents keep a frozen copy.
+- **Tax rates:** seeded per country (KSA: VAT 15% plus ZATCA zero-rated / exempt codes such as `VATEX-SA-EDU`;
+  Jordan: GST 16%...; any other country: "not taxable"), editable per company. Lines snapshot the rate.
+- **Sales documents:** invoices, credit notes and debit notes; `STANDARD` (B2B) or `SIMPLIFIED` (B2C); prices
+  tax-exclusive or inclusive. `DRAFT` → `ISSUED` (gapless `INV/CN/DN-<year>-000001`, posted through
+  `PostingService`: Dr receivable, Cr revenue per line, Cr output tax per rate) → `VOID` only if no authority
+  accepted it and nothing is settled. Credit notes apply to their invoice automatically.
+- **Customer payments:** `RCPT-<year>-…`, fully allocated to open invoices / debit notes (Dr cash/bank, Cr receivable);
+  voided with a reversing entry.
+- **ZATCA Phase 2 (KSA):** `POST /einvoicing/units/zatca` onboards a device (CSR → compliance CSID → six compliance
+  documents → production CSID). Issuing a document then, in the same transaction, takes the next ICV, signs the
+  UBL 2.1 XML (XAdES, secp256k1) and stores it; after commit it is cleared (B2B) or reported (B2C). Outages stay
+  `PENDING` and the worker retries them (`EINVOICING_WORKER_*`); rejections become `REJECTED` and may be voided.
+  Without an onboarded device, KSA invoices carry the Phase 1 QR. Private keys and credentials are encrypted with
+  `DATA_ENCRYPTION_KEY` (required in production).
+- `npm run zatca:sandbox` runs the whole flow against ZATCA's public developer portal (test VAT number and OTP,
+  no customer data): six compliance documents, then one cleared and one reported invoice.
+
+Adding another authority (e.g. JoFotara) means a provider beside `einvoicing/zatca/` and an entry in
+`PROVIDER_BY_COUNTRY`; sales code does not change.
 
 ---
 

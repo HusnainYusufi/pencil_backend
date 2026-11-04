@@ -28,6 +28,7 @@
     "db:studio": "prisma studio",
     "db:backfill": "tsx prisma/backfill-accounting.ts",
     "db:release": "prisma migrate deploy && tsx prisma/seed.ts && tsx prisma/backfill-accounting.ts",
+    "zatca:sandbox": "tsx scripts/zatca-sandbox-check.ts",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
@@ -66,6 +67,7 @@
     "@types/node": "^24.10.1",
     "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.2",
+    "@xmldom/xmldom": "0.9.12",
     "dotenv": "^17.2.3",
     "oxlint": "^1.89.0",
     "pino-pretty": "^13.2.0",
@@ -73,6 +75,7 @@
     "prisma": "7.10.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "xml-crypto": "6.3.3"
   }
 }

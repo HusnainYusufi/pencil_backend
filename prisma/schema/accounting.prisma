@@ -56,6 +56,8 @@ enum JournalSource {
   MANUAL
   OPENING_BALANCE
   REVERSAL
+  SALES_INVOICE
+  CUSTOMER_PAYMENT
 }
 
 model Account {
@@ -76,11 +78,14 @@ model Account {
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parent        Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children      Account[]     @relation("AccountTree")
-  journalLines  JournalLine[]
-  ledgerEntries LedgerEntry[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent            Account?           @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children          Account[]          @relation("AccountTree")
+  journalLines      JournalLine[]
+  ledgerEntries     LedgerEntry[]
+  taxRates          TaxRate[]
+  salesInvoiceLines SalesInvoiceLine[]
+  customerPayments  CustomerPayment[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, systemKey])
@@ -141,9 +146,10 @@ model Branch {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   journalLines  JournalLine[]
   ledgerEntries LedgerEntry[]
+  salesInvoices SalesInvoice[]
 
   @@unique([tenantId, code])
   @@map("branches")
@@ -159,9 +165,10 @@ model CostCenter {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  journalLines  JournalLine[]
-  ledgerEntries LedgerEntry[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalLines      JournalLine[]
+  ledgerEntries     LedgerEntry[]
+  salesInvoiceLines SalesInvoiceLine[]
 
   @@unique([tenantId, code])
   @@map("cost_centers")
@@ -193,11 +200,13 @@ model JournalEntry {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lines         JournalLine[]
-  ledgerEntries LedgerEntry[]
-  reversalOf    JournalEntry? @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
-  reversedBy    JournalEntry? @relation("JournalReversal")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines           JournalLine[]
+  ledgerEntries   LedgerEntry[]
+  reversalOf      JournalEntry?    @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy      JournalEntry?    @relation("JournalReversal")
+  salesInvoice    SalesInvoice?
+  customerPayment CustomerPayment?
 
   @@unique([tenantId, number])
   @@index([tenantId, status, date])

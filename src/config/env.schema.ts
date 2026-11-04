@@ -50,6 +50,18 @@ export const envSchema = z
 
     THROTTLE_TTL_SECONDS: z.coerce.number().int().min(1).default(60),
     THROTTLE_LIMIT: z.coerce.number().int().min(1).default(300),
+
+    /**
+     * 32-byte key (base64) that encrypts secrets at rest: e-invoicing private
+     * keys and authority credentials. Rotating it requires re-onboarding.
+     */
+    DATA_ENCRYPTION_KEY: z
+      .string()
+      .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded')
+      .optional(),
+    /** Background retries of pending e-invoice submissions. */
+    EINVOICING_WORKER_ENABLED: bool.default(true),
+    EINVOICING_WORKER_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
   })
   .superRefine((env, ctx) => {
     if (env.JWT_ACCESS_SECRET === env.JWT_PLATFORM_SECRET) {
@@ -62,6 +74,9 @@ export const envSchema = z
     if (env.NODE_ENV === 'production') {
       if (!env.COOKIE_SECURE) {
         ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
+      }
+      if (!env.DATA_ENCRYPTION_KEY) {
+        ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'is required in production' });
       }
       for (const key of ['JWT_ACCESS_SECRET', 'JWT_PLATFORM_SECRET'] as const) {
         if (env[key].startsWith('change-me')) {

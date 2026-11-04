@@ -13,26 +13,34 @@ enum MembershipStatus {
 }
 
 model Tenant {
-  id                     String       @id @default(uuid(7)) @db.Uuid
-  slug                   String       @unique @db.VarChar(63)
-  legalName              String       @map("legal_name") @db.VarChar(200)
-  tradeName              String?      @map("trade_name") @db.VarChar(200)
-  country                CountryCode
+  id                      String       @id @default(uuid(7)) @db.Uuid
+  slug                    String       @unique @db.VarChar(63)
+  legalName               String       @map("legal_name") @db.VarChar(200)
+  tradeName               String?      @map("trade_name") @db.VarChar(200)
+  country                 CountryCode
   /// ISO-4217: SAR (2 minor digits) or JOD (3 minor digits).
-  baseCurrency           String       @map("base_currency") @db.Char(3)
+  baseCurrency            String       @map("base_currency") @db.Char(3)
   /// IANA zone, e.g. Asia/Riyadh, Asia/Amman.
-  timezone               String       @db.VarChar(64)
-  locale                 String       @default("ar") @db.VarChar(10)
+  timezone                String       @db.VarChar(64)
+  locale                  String       @default("ar") @db.VarChar(10)
   /// VAT registration number (KSA) / tax identification number (JO).
-  taxNumber              String?      @map("tax_number") @db.VarChar(32)
-  commercialRegistration String?      @map("commercial_registration") @db.VarChar(32)
+  taxNumber               String?      @map("tax_number") @db.VarChar(32)
+  commercialRegistration  String?      @map("commercial_registration") @db.VarChar(32)
   /// Month (1-12) in which the fiscal year starts.
-  fiscalYearStartMonth   Int          @default(1) @map("fiscal_year_start_month")
-  status                 TenantStatus @default(ACTIVE)
-  suspendedAt            DateTime?    @map("suspended_at") @db.Timestamptz(3)
-  suspensionReason       String?      @map("suspension_reason") @db.VarChar(500)
-  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  fiscalYearStartMonth    Int          @default(1) @map("fiscal_year_start_month")
+  /// National / postal address of the head office (printed on e-invoices).
+  addressStreet           String?      @map("address_street") @db.VarChar(200)
+  addressBuildingNumber   String?      @map("address_building_number") @db.VarChar(20)
+  addressAdditionalNumber String?      @map("address_additional_number") @db.VarChar(20)
+  addressDistrict         String?      @map("address_district") @db.VarChar(100)
+  addressCity             String?      @map("address_city") @db.VarChar(100)
+  addressPostalCode       String?      @map("address_postal_code") @db.VarChar(20)
+  addressRegion           String?      @map("address_region") @db.VarChar(100)
+  status                  TenantStatus @default(ACTIVE)
+  suspendedAt             DateTime?    @map("suspended_at") @db.Timestamptz(3)
+  suspensionReason        String?      @map("suspension_reason") @db.VarChar(500)
+  createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   memberships      Membership[]
   roles            Role[]
@@ -50,6 +58,16 @@ model Tenant {
   journalLines   JournalLine[]
   ledgerEntries  LedgerEntry[]
   numberSeries   NumberSeries[]
+
+  // Sales & e-invoicing
+  contacts           Contact[]
+  taxRates           TaxRate[]
+  salesInvoices      SalesInvoice[]
+  salesInvoiceLines  SalesInvoiceLine[]
+  customerPayments   CustomerPayment[]
+  paymentAllocations PaymentAllocation[]
+  einvoicingUnits    EInvoicingUnit[]
+  einvoiceDocuments  EInvoiceDocument[]
 
   @@index([status])
   @@index([country])

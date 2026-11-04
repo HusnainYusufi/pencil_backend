@@ -71,11 +71,15 @@ export class AccountsRepository extends TenantScopedRepository {
 
   /** Referenced by any journal line (draft or posted) or ledger posting. */
   async hasActivity(id: string): Promise<boolean> {
-    const [lines, ledger] = await Promise.all([
-      this.client.journalLine.count({ where: { tenantId: this.tenantId, accountId: id } }),
-      this.client.ledgerEntry.count({ where: { tenantId: this.tenantId, accountId: id } }),
+    const where = { tenantId: this.tenantId, accountId: id };
+    const counts = await Promise.all([
+      this.client.journalLine.count({ where }),
+      this.client.ledgerEntry.count({ where }),
+      this.client.taxRate.count({ where }),
+      this.client.salesInvoiceLine.count({ where }),
+      this.client.customerPayment.count({ where }),
     ]);
-    return lines + ledger > 0;
+    return counts.some((n) => n > 0);
   }
 
 }
