@@ -43,9 +43,11 @@ model Contact {
   createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt               DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invoices SalesInvoice[]
-  payments CustomerPayment[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices         SalesInvoice[]
+  payments         CustomerPayment[]
+  bills            PurchaseBill[]
+  supplierPayments SupplierPayment[]
 
   @@unique([tenantId, code])
   @@index([tenantId, name])
@@ -83,6 +85,7 @@ model TaxRate {
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   account      Account            @relation(fields: [accountId], references: [id], onDelete: Restrict)
   invoiceLines SalesInvoiceLine[]
+  billLines    PurchaseBillLine[]
 
   @@unique([tenantId, code])
   @@map("tax_rates")

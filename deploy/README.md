@@ -3,10 +3,12 @@
 One Docker Compose stack serves the whole platform:
 
 ```
-Internet ──443──▶ Caddy (TLS, HTTP/3) ──▶ api:4100     (tenant API, public)
+Internet ──443──▶ Caddy (TLS, HTTP/3) ──▶ app:3000     (tenant web app, public)
+                                     ├──▶ api:4100     (API, public)
                                      └──▶ admin:3000   (staff console, IP-restricted)
-                   admin ──private network──▶ api      (server-to-server)
+                   app / admin ──private network──▶ api   (server-to-server)
                    api / migrate ──internal network──▶ postgres (no internet route)
+                   api ──▶ SMTP (invitations, password reset) and ZATCA (e-invoicing)
 ```
 
 | Service | Image | Runs as | Notes |
@@ -14,28 +16,37 @@ Internet ──443──▶ Caddy (TLS, HTTP/3) ──▶ api:4100     (tenant A
 | `caddy` | `caddy:2.11.7-alpine` | non-root caps | Automatic Let's Encrypt, HSTS, admin IP allowlist |
 | `migrate` | backend `migrate` target | `node` | One-shot: `migrate deploy` → seed catalog → backfill accounting |
 | `api` | backend `runtime` target | `node` | Read-only rootfs, all caps dropped, 768 MB limit |
+| `app` | `pencil_frontend` image | `node` | Tenant web app; read-only rootfs, all caps dropped, 512 MB limit |
 | `admin` | `pencil_admin` image | `node` | Read-only rootfs, all caps dropped, 512 MB limit |
 | `postgres` | `postgres:17.11-alpine` | `postgres` | Optional (`--profile bundled-db`); prefer a managed DB |
 
 ## First deploy
 
-On a fresh Linux host with Docker Engine and the Compose plugin, check out the two repos side by side:
+On a fresh Linux host with Docker Engine and the Compose plugin, check out the three repos side by side:
 
 ```bash
 git clone https://github.com/HusnainYusufi/pencil_backend.git
+git clone https://github.com/HusnainYusufi/pencil_frontend.git
 git clone https://github.com/HusnainYusufi/pencil_admin.git
 cd pencil_backend/deploy
 ```
 
-1. **DNS:** point `API_DOMAIN` and `ADMIN_DOMAIN` at the server, and open ports 80 and 443.
-2. **Secrets** (generated on the server and never committed):
+1. **DNS:** point `APP_DOMAIN`, `API_DOMAIN` and `ADMIN_DOMAIN` at the server, and open ports 80 and 443.
+2. **Secrets and settings** (generated on the server and never committed). Put the SMTP password in single quotes:
    ```bash
-   API_DOMAIN=api.example.com ADMIN_DOMAIN=admin.example.com \
-   APP_ORIGIN=https://app.example.com ACME_EMAIL=ops@example.com \
-   ADMIN_ALLOWED_IPS="203.0.113.0/24" APP_CELL=ksa-1 \
-   SEED_ADMIN_EMAIL=you@example.com ./generate-secrets.sh
+   APP_DOMAIN=app.example.com API_DOMAIN=api.example.com ADMIN_DOMAIN=admin.example.com \
+   ACME_EMAIL=ops@example.com ADMIN_ALLOWED_IPS="203.0.113.0/24" APP_CELL=ksa-1 \
+   SEED_ADMIN_EMAIL=you@example.com \
+   SMTP_HOST=smtp.gmail.com SMTP_PORT=465 SMTP_SECURE=true \
+   SMTP_USER=sender@gmail.com SMTP_PASSWORD='xxxx xxxx xxxx xxxx' \
+   EMAIL_FROM=no-reply@example.com EMAIL_FROM_NAME="Pencil" SUPPORT_EMAIL=support@example.com \
+   ./generate-secrets.sh
    ```
-   This writes `env/{caddy,postgres,migrate,api,admin}.env` with mode 600 and prints the first admin's temporary password once.
+   This writes `env/{caddy,postgres,migrate,api,app,admin}.env` with mode 600 and prints the first admin's temporary password once.
+   Email notes:
+   - Gmail needs an **app password** (Google account → Security → App passwords), not the account password.
+   - Gmail rewrites the sender to the SMTP account unless `EMAIL_FROM` is a verified "Send mail as" alias of that account. For a branded sender, use a provider for your own domain (SES, Postmark, SendGrid, Google Workspace) with SPF and DKIM set.
+   - Gmail allows roughly 500 messages a day; fine for invitations and resets, not for bulk mail.
 3. **Start:**
    ```bash
    docker compose -f docker-compose.prod.yml --profile bundled-db up -d --build
@@ -50,10 +61,13 @@ With a **managed PostgreSQL**:
 - create the `pencil_owner` and `pencil_app` roles as in `postgres/init-roles.sh`
 - set the hosts in `env/migrate.env` and `env/api.env`, adding `?sslmode=require`
 
+After the first start, open `https://APP_DOMAIN`, onboard a company from `https://ADMIN_DOMAIN` (the owner receives an activation email),
+and check the API logs for `email ... failed` lines if no email arrives.
+
 ## Releasing a new version
 
 ```bash
-git -C ../ pull && git -C ../../pencil_admin pull
+git -C ../ pull && git -C ../../pencil_frontend pull && git -C ../../pencil_admin pull
 docker compose -f docker-compose.prod.yml --profile bundled-db up -d --build
 ```
 

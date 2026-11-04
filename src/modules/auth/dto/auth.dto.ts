@@ -57,6 +57,36 @@ export class SwitchTenantDto {
   @IsUUID() tenantId: string;
 }
 
+export class ForgotPasswordDto {
+  @IsEmail() @MaxLength(254) email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString() @Length(20, 200) token: string;
+
+  @IsString()
+  @Length(10, 128)
+  @Matches(PASSWORD_RULE, { message: 'password must contain at least one letter and one digit' })
+  password: string;
+}
+
+export class InvitationQueryDto {
+  @IsString() @Length(20, 200) token: string;
+}
+
+export class AcceptInvitationDto {
+  @IsString() @Length(20, 200) token: string;
+
+  /** Required when the account has no password yet (new user). */
+  @IsOptional()
+  @IsString()
+  @Length(10, 128)
+  @Matches(PASSWORD_RULE, { message: 'password must contain at least one letter and one digit' })
+  password?: string;
+
+  @IsOptional() @IsString() @Length(2, 150) fullName?: string;
+}
+
 export class PlatformLoginDto {
   @IsEmail() @MaxLength(254) email: string;
   @IsString() @Length(1, 128) password: string;

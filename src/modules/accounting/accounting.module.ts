@@ -6,6 +6,7 @@ import { AccountingContext } from './accounting-context.service.js';
 import {
   AccountsController,
   DimensionsController,
+  FinancialStatementsController,
   FiscalController,
   JournalsController,
   LedgerReportsController,
@@ -21,6 +22,7 @@ import { FiscalRepository } from './repositories/fiscal.repository.js';
 import { JournalsRepository } from './repositories/journals.repository.js';
 import { LedgerRepository } from './repositories/ledger.repository.js';
 import { NumberSeriesRepository } from './repositories/number-series.repository.js';
+import { FinancialStatementsService } from './reports/financial-statements.service.js';
 import { LedgerReportsService } from './reports/ledger-reports.service.js';
 
 /**
@@ -30,7 +32,7 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
  */
 @Module({
   imports: [TenancyModule, EntitlementsModule],
-  controllers: [AccountsController, FiscalController, DimensionsController, JournalsController, LedgerReportsController],
+  controllers: [AccountsController, FiscalController, DimensionsController, JournalsController, LedgerReportsController, FinancialStatementsController],
   providers: [
     AccountingContext,
     AccountingBootstrapService,
@@ -46,6 +48,7 @@ import { LedgerReportsService } from './reports/ledger-reports.service.js';
     PostingService,
     JournalService,
     LedgerReportsService,
+    FinancialStatementsService,
   ],
   exports: [AccountingContext, PostingService, AccountsRepository, FiscalCalendarService, NumberSeriesRepository],
 })

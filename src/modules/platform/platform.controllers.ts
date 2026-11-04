@@ -64,6 +64,14 @@ export class PlatformTenantsController {
     return this.tenants.onboard(dto);
   }
 
+  @Post(':id/owner-invitation')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Re-send the owner's activation / invitation email" })
+  @RequirePermissions(PlatformPermission.TENANTS_MANAGE)
+  resendOwnerInvitation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tenants.resendOwnerInvitation(id);
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Suspend, archive or reactivate a tenant' })
   @RequirePermissions(PlatformPermission.TENANTS_MANAGE)

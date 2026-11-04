@@ -1,5 +1,5 @@
 # =============================================================================
-# Pencil production stack: Caddy (TLS) → API + admin console → PostgreSQL
+# Pencil production stack: Caddy (TLS) → tenant web app + API + admin console → PostgreSQL
 #
 #   cd deploy
 #   ./generate-secrets.sh                      # once: creates env/*.env (never committed)
@@ -13,7 +13,9 @@
 #   - every app container: non-root, read-only rootfs, all capabilities dropped,
 #     no-new-privileges, memory-limited, log-rotated
 #   - least-privilege secrets: each service gets only its own env file
-#     (the API never sees the schema-owner password; the admin never sees JWT keys)
+#     (the API never sees the schema-owner password; the web apps never see JWT keys;
+#     the tenant app and the admin console have different session secrets)
+#   - the API reaches the internet only for SMTP and the ZATCA gateway
 #   - migrations run in a one-shot job before the API starts
 # See deploy/README.md for the full runbook.
 # =============================================================================
@@ -49,6 +51,7 @@ services:
     networks: [web]
     depends_on:
       api: { condition: service_healthy }
+      app: { condition: service_healthy }
       admin: { condition: service_healthy }
     logging:
       driver: json-file
@@ -90,6 +93,28 @@ services:
     deploy:
       resources:
         limits: { memory: 768M }
+
+  # Tenant web app (companies' staff). Talks to the API server-to-server only.
+  app:
+    <<: *hardened
+    image: ${APP_IMAGE:-pencil-app:latest}
+    build:
+      context: ${APP_BUILD_CONTEXT:-../../pencil_frontend}
+    env_file: [env/app.env]
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      PENCIL_API_URL: http://api:4100/api/v1
+      COOKIE_SECURE: "true"
+      PENCIL_ENVIRONMENT: production
+    tmpfs: [/tmp, /app/.next/cache]
+    networks: [web]
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512M }
 
   admin:
     <<: *hardened

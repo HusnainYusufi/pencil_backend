@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
+  IsEmail,
   IsArray,
   IsIn,
   IsOptional,
@@ -60,3 +61,9 @@ export class UpdateMemberRoleDto {
 }
 
 export class MembersQueryDto extends SearchPageQueryDto {}
+
+export class InviteMemberDto {
+  @IsEmail() @MaxLength(254) email: string;
+  @IsString() @Length(2, 150) fullName: string;
+  @IsUUID() roleId: string;
+}

@@ -17,10 +17,12 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthGuard } from './modules/auth/auth.guard.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ContactsModule } from './modules/contacts/contacts.module.js';
+import { EmailModule } from './modules/email/email.module.js';
 import { EInvoicingModule } from './modules/einvoicing/einvoicing.module.js';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module.js';
 import { FeatureGuard } from './modules/entitlements/feature.guard.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
+import { PurchasesModule } from './modules/purchases/purchases.module.js';
 import { SalesModule } from './modules/sales/sales.module.js';
 import { TaxModule } from './modules/tax/tax.module.js';
 import { TenancyModule } from './modules/tenancy/tenancy.module.js';
@@ -44,6 +46,7 @@ import { TenancyModule } from './modules/tenancy/tenancy.module.js';
     }),
 
     // Domain
+    EmailModule,
     AuditModule,
     EntitlementsModule,
     TenancyModule,
@@ -54,6 +57,7 @@ import { TenancyModule } from './modules/tenancy/tenancy.module.js';
     ContactsModule,
     EInvoicingModule,
     SalesModule,
+    PurchasesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

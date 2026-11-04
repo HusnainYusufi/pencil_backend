@@ -1,10 +1,20 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppConfig } from '../../config/app-config.service.js';
 import { PlatformAuth, Public, TenantOptional } from '../../core/security/decorators.js';
-import { LoginDto, PlatformLoginDto, RefreshDto, SignupDto, SwitchTenantDto } from './dto/auth.dto.js';
+import {
+  AcceptInvitationDto,
+  ForgotPasswordDto,
+  InvitationQueryDto,
+  LoginDto,
+  PlatformLoginDto,
+  RefreshDto,
+  ResetPasswordDto,
+  SignupDto,
+  SwitchTenantDto,
+} from './dto/auth.dto.js';
 import { PlatformAuthService } from './platform/platform-auth.service.js';
 import {
   clearRefreshCookie,
@@ -42,6 +52,43 @@ export class AuthController {
   @Throttle(CREDENTIALS_THROTTLE)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
     const result = await this.auth.login(dto);
+    setRefreshCookie(reply, USER_REFRESH_COOKIE, result.refreshToken, result.refreshTokenExpiresAt, this.secure);
+    return result;
+  }
+
+  @Public()
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Email a password-reset link (same answer whether or not the account exists)' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    await this.auth.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('password/reset')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle(CREDENTIALS_THROTTLE)
+  @ApiOperation({ summary: 'Set a new password from the emailed link; signs out every session' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.auth.resetPassword(dto.token, dto.password);
+  }
+
+  @Public()
+  @Get('invitation')
+  @Throttle(CREDENTIALS_THROTTLE)
+  @ApiOperation({ summary: 'Who and which company an invitation link is for' })
+  invitation(@Query() query: InvitationQueryDto) {
+    return this.auth.invitation(query.token);
+  }
+
+  @Public()
+  @Post('invitation/accept')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(CREDENTIALS_THROTTLE)
+  @ApiOperation({ summary: 'Accept an invitation (sets the password for new accounts) and sign in' })
+  async acceptInvitation(@Body() dto: AcceptInvitationDto, @Res({ passthrough: true }) reply: FastifyReply) {
+    const result = await this.auth.acceptInvitation(dto);
     setRefreshCookie(reply, USER_REFRESH_COOKIE, result.refreshToken, result.refreshTokenExpiresAt, this.secure);
     return result;
   }

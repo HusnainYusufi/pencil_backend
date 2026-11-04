@@ -92,6 +92,31 @@ export class MembershipsRepository extends BaseRepository {
     });
   }
 
+  findByTenantUser(tenantId: string, userId: string): Promise<Membership | null> {
+    return this.client.membership.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+  }
+
+  /** INVITED -> ACTIVE (accepting an invitation). */
+  async activate(tenantId: string, userId: string): Promise<void> {
+    await this.client.membership.updateMany({ where: { tenantId, userId, status: 'INVITED' }, data: { status: 'ACTIVE' } });
+  }
+
+  /** Withdraws a pending invitation (active members are never deleted this way). */
+  async deleteInvited(tenantId: string, membershipId: string): Promise<boolean> {
+    const { count } = await this.client.membership.deleteMany({ where: { id: membershipId, tenantId, status: 'INVITED' } });
+    return count === 1;
+  }
+
+  /** The first owner (role is RLS-protected: call in the tenant's or system scope). */
+  async findOwnerUserId(tenantId: string): Promise<string | null> {
+    const row = await this.client.membership.findFirst({
+      where: { tenantId, role: { key: 'owner' } },
+      orderBy: { createdAt: 'asc' },
+      select: { userId: true },
+    });
+    return row?.userId ?? null;
+  }
+
   countActive(tenantId: string): Promise<number> {
     return this.client.membership.count({ where: { tenantId, status: 'ACTIVE' } });
   }

@@ -59,6 +59,21 @@ export const envSchema = z
       .string()
       .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded')
       .optional(),
+    /** Public URL of the tenant web app (links in emails: invitations, password reset). */
+    APP_URL: z.url().default('http://localhost:3000'),
+
+    /** Outgoing email (SMTP). Without SMTP_HOST, emails are logged instead of sent (development). */
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    /** true = implicit TLS (port 465); false = STARTTLS (port 587). */
+    SMTP_SECURE: bool.default(false),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    EMAIL_FROM: z.email().default('no-reply@pencil.local'),
+    EMAIL_FROM_NAME: z.string().min(1).max(100).default('Pencil'),
+    /** Reply-to / contact address shown in emails (receive-only). */
+    SUPPORT_EMAIL: z.email().optional(),
+
     /** Background retries of pending e-invoice submissions. */
     EINVOICING_WORKER_ENABLED: bool.default(true),
     EINVOICING_WORKER_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
@@ -74,6 +89,12 @@ export const envSchema = z
     if (env.NODE_ENV === 'production') {
       if (!env.COOKIE_SECURE) {
         ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
+      }
+      if (!env.SMTP_HOST) {
+        ctx.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'is required in production (invitations and password reset)' });
+      }
+      if (!env.APP_URL.startsWith('https://')) {
+        ctx.addIssue({ code: 'custom', path: ['APP_URL'], message: 'must be https in production' });
       }
       if (!env.DATA_ENCRYPTION_KEY) {
         ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'is required in production' });

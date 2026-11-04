@@ -149,7 +149,8 @@ describe('Platform admin API (e2e)', () => {
       const byKey = new Map(res.body.map((f: { key: string }) => [f.key, f]));
       expect(byKey.get('accounting.journals')).toMatchObject({ module: 'ACCOUNTING', status: 'AVAILABLE' });
       expect(byKey.get('sales.invoices')).toMatchObject({ module: 'SALES', status: 'AVAILABLE' });
-      expect(byKey.get('purchases.bills')).toMatchObject({ module: 'PURCHASES', status: 'COMING_SOON' });
+      expect(byKey.get('purchases.bills')).toMatchObject({ module: 'PURCHASES', status: 'AVAILABLE' });
+      expect(byKey.get('inventory.items')).toMatchObject({ module: 'INVENTORY', status: 'COMING_SOON' });
       expect(byKey.get('limits.users')).toMatchObject({ type: 'LIMIT', module: 'PLATFORM' });
     });
 

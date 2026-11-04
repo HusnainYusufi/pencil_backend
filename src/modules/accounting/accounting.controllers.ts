@@ -16,7 +16,8 @@ import {
   ReverseJournalEntryDto,
   UpdateJournalEntryDto,
 } from './dto/journals.dto.js';
-import { AccountStatementQueryDto, TrialBalanceQueryDto } from './dto/reports.dto.js';
+import { AccountStatementQueryDto, BalanceSheetQueryDto, IncomeStatementQueryDto, TrialBalanceQueryDto } from './dto/reports.dto.js';
+import { FinancialStatementsService } from './reports/financial-statements.service.js';
 import { FiscalCalendarService } from './fiscal/fiscal-calendar.service.js';
 import { JournalService } from './journals/journal.service.js';
 import { LedgerReportsService } from './reports/ledger-reports.service.js';
@@ -226,5 +227,27 @@ export class LedgerReportsController {
   @RequirePermissions(Permission.REPORTS_READ)
   accountStatement(@Param('accountId', ParseUUIDPipe) accountId: string, @Query() query: AccountStatementQueryDto) {
     return this.reports.accountStatement(accountId, query);
+  }
+}
+
+@ApiTags('Accounting · Reports')
+@TenantAuth()
+@RequireFeature(Feature.FINANCIAL_STATEMENTS)
+@Controller('reports')
+export class FinancialStatementsController {
+  constructor(private readonly statements: FinancialStatementsService) {}
+
+  @Get('income-statement')
+  @ApiOperation({ summary: 'Profit and loss for a date range (optionally against the same range a year earlier)' })
+  @RequirePermissions(Permission.REPORTS_READ)
+  incomeStatement(@Query() query: IncomeStatementQueryDto) {
+    return this.statements.incomeStatement(query);
+  }
+
+  @Get('balance-sheet')
+  @ApiOperation({ summary: 'Balance sheet at a date (current-year profit shown in equity)' })
+  @RequirePermissions(Permission.REPORTS_READ)
+  balanceSheet(@Query() query: BalanceSheetQueryDto) {
+    return this.statements.balanceSheet(query);
   }
 }

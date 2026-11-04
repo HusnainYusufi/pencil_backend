@@ -13,7 +13,9 @@ import { PasswordService } from '../auth/password.service.js';
 import { FeaturesRepository } from '../catalog/features.repository.js';
 import { PlansRepository } from '../catalog/plans.repository.js';
 import { EntitlementsService } from '../entitlements/entitlements.service.js';
+import { AccountLinksService } from '../identity/account-links.service.js';
 import { UsersRepository } from '../identity/users.repository.js';
+import { MembershipsRepository } from '../tenancy/repositories/memberships.repository.js';
 import { SubscriptionsRepository } from '../tenancy/repositories/subscriptions.repository.js';
 import { TenantsRepository, type TenantAdminView } from '../tenancy/repositories/tenants.repository.js';
 import { TenantProvisioningService } from '../tenancy/tenant-provisioning.service.js';
@@ -47,6 +49,8 @@ export class PlatformTenantsService {
     private readonly entitlements: EntitlementsService,
     private readonly audit: AuditService,
     private readonly accessCache: AccessCache,
+    private readonly links: AccountLinksService,
+    private readonly memberships: MembershipsRepository,
   ) {}
 
   list(query: TenantsQueryDto): Promise<Page<TenantAdminView>> {
@@ -63,29 +67,54 @@ export class PlatformTenantsService {
     return { ...tenant, entitlements: entitlements.toJSON(), overrides };
   }
 
-  /** Sales-assisted onboarding: attaches an existing user or creates one. */
-  async onboard(dto: OnboardTenantDto): Promise<TenantAdminView> {
+  /**
+   * Sales-assisted onboarding: attaches an existing user or creates one, then
+   * emails the owner a link (new owners set their password from it). A
+   * password may still be given to skip the email step.
+   */
+  async onboard(dto: OnboardTenantDto): Promise<TenantAdminView & { ownerInvitationSent: boolean }> {
     const email = normalizeEmail(dto.owner.email);
     const existing = await this.users.findByEmail(email);
-    if (!existing && !dto.owner.password) {
-      throw new AppException(ErrorCode.VALIDATION_FAILED, 'Request validation failed', [
-        { field: 'owner.password', errors: ['owner.password is required for a new user'] },
-      ]);
-    }
-    const passwordHash = existing ? null : await this.passwords.hash(dto.owner.password!);
+    const passwordHash = !existing && dto.owner.password ? await this.passwords.hash(dto.owner.password) : null;
 
-    const tenantId = await this.db.transaction(async () => {
+    const { tenantId, ownerId } = await this.db.transaction(async () => {
       const ownerId =
-        existing?.id ??
-        (await this.users.create({ email, passwordHash: passwordHash!, fullName: dto.owner.fullName.trim() })).id;
+        existing?.id ?? (await this.users.create({ email, passwordHash, fullName: dto.owner.fullName.trim() })).id;
       const tenant = await this.provisioning.provision({
         company: dto.company,
         ownerUserId: ownerId,
         planCode: dto.planCode,
       });
-      return tenant.id;
+      return { tenantId: tenant.id, ownerId };
     });
-    return (await this.tenants.findAdminView(tenantId))!;
+
+    const owner = (await this.users.findById(ownerId))!;
+    const ownerInvitationSent = await this.links.sendInvitation({
+      user: owner,
+      tenantId,
+      companyName: dto.company.tradeName ?? dto.company.legalName,
+      inviterName: null,
+      invitedById: null,
+    });
+    return { ...(await this.tenants.findAdminView(tenantId))!, ownerInvitationSent };
+  }
+
+  /** Re-sends the owner's activation / invitation email. */
+  async resendOwnerInvitation(tenantId: string): Promise<{ ownerInvitationSent: boolean }> {
+    const tenant = await this.tenants.findById(tenantId);
+    if (!tenant) throw AppException.notFound('Tenant', tenantId);
+    const ownerId = await this.memberships.findOwnerUserId(tenantId);
+    if (!ownerId) throw AppException.notFound('Owner');
+    const owner = (await this.users.findById(ownerId))!;
+    const sent = await this.links.sendInvitation({
+      user: owner,
+      tenantId,
+      companyName: tenant.tradeName ?? tenant.legalName,
+      inviterName: null,
+      invitedById: null,
+    });
+    await this.audit.record({ action: 'tenant.owner_invitation_resent', tenantId: null, entityType: 'tenant', entityId: tenantId });
+    return { ownerInvitationSent: sent };
   }
 
   async setStatus(id: string, dto: UpdateTenantStatusDto): Promise<TenantAdminView> {

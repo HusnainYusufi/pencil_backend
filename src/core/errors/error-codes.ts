@@ -23,6 +23,8 @@ export const ErrorCode = {
   TOKEN_EXPIRED: 'TOKEN_EXPIRED',
   INVALID_TOKEN: 'INVALID_TOKEN',
   SESSION_REVOKED: 'SESSION_REVOKED',
+  /** Emailed link (invitation, password reset) unknown, used or expired. */
+  LINK_INVALID: 'LINK_INVALID',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
 
   // Tenancy / subscription
@@ -82,6 +84,7 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, HttpStatus> = {
   TOKEN_EXPIRED: HttpStatus.UNAUTHORIZED,
   INVALID_TOKEN: HttpStatus.UNAUTHORIZED,
   SESSION_REVOKED: HttpStatus.UNAUTHORIZED,
+  LINK_INVALID: HttpStatus.GONE,
   PERMISSION_DENIED: HttpStatus.FORBIDDEN,
 
   TENANT_REQUIRED: HttpStatus.FORBIDDEN,
